@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "RoadGuard-AI",
+    "slug": "roadguard-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0F172A"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.roadguardai.app",
+      "versionCode": 1,
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 35,
+      "minSdkVersion": 26,
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.roadguardai.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "RoadGuard needs location to tag detected hazards on the map.",
+        "NSLocationAlwaysUsageDescription": "RoadGuard needs background location for continuous hazard monitoring.",
+        "NSCameraUsageDescription": "RoadGuard uses the camera to photograph road hazards for AI analysis.",
+        "NSMicrophoneUsageDescription": "RoadGuard uses the microphone for the voice-assistant chatbot."
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "RoadGuard needs location to detect and tag road hazards."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RoadGuard uses the camera to photograph road hazards."
+        }
+      ],
+      "expo-sensors"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "590c9a06-9e34-4b4f-9a63-2e5aa1a16399"
+      }
+    }
+  }
+}

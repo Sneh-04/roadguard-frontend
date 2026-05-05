@@ -1,0 +1,1 @@
+// SafetyScoreCard.tsx

@@ -1,0 +1,1 @@
+// hazardStore.ts

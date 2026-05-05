@@ -1,0 +1,6 @@
+{
+  "name": "RoadGuardApp",
+  "displayName": "RoadGuard",
+  "version": "1.0.0",
+  "description": "Offline-first road hazard detection and reporting mobile application"
+}

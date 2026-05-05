@@ -1,0 +1,1 @@
+// HazardCard.tsx

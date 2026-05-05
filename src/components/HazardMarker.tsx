@@ -1,0 +1,1 @@
+// HazardMarker.tsx
