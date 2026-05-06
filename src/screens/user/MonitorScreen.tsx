@@ -22,6 +22,7 @@ import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { useAccelerometer } from '../../hooks/useAccelerometer';
+import { useLocation } from '../../hooks/useLocation';
 import { apiService } from '../../services/api';
 
 const { width } = Dimensions.get('window');
@@ -57,6 +58,7 @@ export default function MonitorScreen() {
   const [detectionCount, setDetectionCount] = useState(0);
 
   const { accelerometerData, isMonitoring, startMonitoring, stopMonitoring } = useAccelerometer();
+  const { location } = useLocation();
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -114,48 +116,67 @@ export default function MonitorScreen() {
     }
   }, [accelerometerData, isMonitoring, lastSpikeTime]);
 
-  const performFusionAnalysis = async (sensorData: SensorData) => {
+  const classifyHazardType = (magnitude: number) => {
+    if (magnitude >= 3.2) return 'POTHOLE';
+    if (magnitude >= SPIKE_THRESHOLD) return 'SPEEDBUMP';
+    return 'NORMAL';
+  };
+
+  const sendDetectionToBackend = async (magnitude: number, timestamp: number) => {
     try {
       if (mountedRef.current) setMonitorState('PROCESSING');
 
-      const fusionData = {
-        accelerometer: {
-          x: sensorData.x,
-          y: sensorData.y,
-          z: sensorData.z,
-        },
-        timestamp: sensorData.timestamp,
+      const type = classifyHazardType(magnitude);
+      const payload = {
+        type,
+        latitude: location?.latitude ?? 0,
+        longitude: location?.longitude ?? 0,
+        timestamp: new Date(timestamp).toISOString(),
+        confidence: magnitude,
       };
 
-      const response = await apiService.getPrediction(fusionData);
+      const response = await apiService.reportDetection(payload);
 
-      if (response.success && response.data && mountedRef.current) {
-        const result: FusionResult = {
-          hazard_type: response.data.hazard_type,
-          confidence: response.data.confidence,
-          sensor_contribution: response.data.sensor_contribution || 0.7,
-          vision_contribution: response.data.vision_contribution || 0.3,
-          timestamp: new Date().toISOString(),
-        };
+      if (mountedRef.current) {
+        if (response.success) {
+          const result: FusionResult = {
+            hazard_type: type === 'POTHOLE' ? 2 : type === 'SPEEDBUMP' ? 1 : 0,
+            confidence: response.data?.confidence ?? Math.min(1, magnitude / 5),
+            sensor_contribution: 1,
+            vision_contribution: 0,
+            timestamp: payload.timestamp,
+          };
 
-        setFusionResults(prev => [result, ...prev.slice(0, 9)]); // Keep last 10 results
+          setFusionResults(prev => [result, ...prev.slice(0, 9)]);
 
-        if (result.confidence > 0.8) {
-          setMonitorState('ALERT');
-          // Trigger notification or alert
-          Alert.alert(
-            'Hazard Detected!',
-            `High confidence ${result.hazard_type === 1 ? 'speed breaker' : 'pothole'} detection`,
-            [{ text: 'OK' }]
-          );
+          if (type !== 'NORMAL') {
+            setMonitorState('ALERT');
+            Alert.alert('Hazard Sent', `${type} reported to backend`, [{ text: 'OK' }]);
+          } else {
+            setMonitorState('DETECTING');
+          }
         } else {
-          setMonitorState('DETECTING');
+          setMonitorState('MONITORING');
+          Alert.alert('Detection failed', response.error || 'Unable to send report');
         }
       }
     } catch (error) {
-      console.error('Fusion analysis failed:', error);
+      console.error('Detection API failed:', error);
       if (mountedRef.current) setMonitorState('MONITORING');
     }
+  };
+
+  const performFusionAnalysis = async (sensorData: SensorData) => {
+    try {
+      await sendDetectionToBackend(sensorData.magnitude, sensorData.timestamp);
+    } catch (error) {
+      console.error('Fusion analysis failed:', error);
+    }
+  };
+
+  const triggerManualDetection = async () => {
+    const magnitude = sensorData.length > 0 ? sensorData[sensorData.length - 1].magnitude : SPIKE_THRESHOLD + 0.5;
+    await sendDetectionToBackend(magnitude, Date.now());
   };
 
   const toggleMonitoring = async () => {
@@ -337,6 +358,13 @@ export default function MonitorScreen() {
         <Text style={styles.monitorButtonText}>
           {isMonitoring ? 'Stop Monitoring' : 'Start Monitoring'}
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.monitorButton, { backgroundColor: colors.secondary }]}
+        onPress={triggerManualDetection}
+      >
+        <Text style={styles.monitorButtonText}>Manual Detection</Text>
       </TouchableOpacity>
 
       {/* Spike Detection Indicator */}

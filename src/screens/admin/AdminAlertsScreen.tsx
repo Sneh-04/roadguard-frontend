@@ -41,10 +41,11 @@ export default function AdminAlertsScreen() {
 
   const loadReports = async () => {
     try {
-      const response = await apiService.request<any>('GET', '/admin/reports');
+      const response = await apiService.request<any>('GET', '/reports');
+      const responseData = response.data?.reports ?? response.data ?? [];
 
-      if (response.success && response.data?.reports) {
-        const sorted = response.data.reports.sort(
+      if (response.success && Array.isArray(responseData)) {
+        const sorted = responseData.sort(
           (a: HazardReport, b: HazardReport) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
@@ -64,7 +65,7 @@ export default function AdminAlertsScreen() {
 
   const handleUpdateStatus = async (reportId: number, newStatus: 'reviewed' | 'resolved') => {
     try {
-      const response = await apiService.request<any>('PUT', `/admin/reports/${reportId}/status`, { status: newStatus });
+      const response = await apiService.request<any>('PUT', `/reports/${reportId}/status`, { status: newStatus });
 
       if (response.success) {
         setReports(prev =>

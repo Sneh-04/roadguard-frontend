@@ -1,5 +1,5 @@
 export const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-backend-ympg.onrender.com';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.0.2.2:8000';
 
 export const OPENWEATHER_API_KEY =
   process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY || '';

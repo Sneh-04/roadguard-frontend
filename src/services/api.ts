@@ -135,28 +135,35 @@ class ApiService {
     }
 
     try {
-      const response = await this.makeRequest<any[]>('GET', '/events');
+      const response = await this.makeRequest<any[]>('GET', '/reports');
       if (response.success && response.data) {
         // Update cache
         await offlineService.getCachedHazards(); // This will refresh cache
       }
       return response;
     } catch (error) {
-      // Fallback to cache on network error
-      const cachedHazards = await offlineService.getCachedHazards();
-      return {
-        success: true,
-        data: cachedHazards,
-        fromCache: true,
-      };
+      // Fallback to legacy hazards endpoint or cache on network issue
+      try {
+        return await this.makeRequest<any[]>('GET', '/events');
+      } catch (fallbackError) {
+        const cachedHazards = await offlineService.getCachedHazards();
+        return {
+          success: true,
+          data: cachedHazards,
+          fromCache: true,
+        };
+      }
     }
   }
 
   async reportHazard(hazardData: {
-    hazard_type: number;
+    hazard_type?: number;
+    type?: string;
     latitude: number;
     longitude: number;
-    confidence: number;
+    confidence?: number;
+    timestamp?: string;
+    description?: string;
   }): Promise<ApiResponse<any>> {
     if (!offlineService.isConnected()) {
       // Queue for later when offline
@@ -167,7 +174,17 @@ class ApiService {
       };
     }
 
-    return this.makeRequest('POST', '/hazards/report', hazardData);
+    return this.makeRequest('POST', '/report', hazardData);
+  }
+
+  async reportDetection(detectionData: {
+    type: string;
+    latitude?: number;
+    longitude?: number;
+    timestamp: string;
+    confidence?: number;
+  }): Promise<ApiResponse<any>> {
+    return this.makeRequest('POST', '/report', detectionData);
   }
 
   async getHazardHistory(limit: number = 50): Promise<ApiResponse<any[]>> {

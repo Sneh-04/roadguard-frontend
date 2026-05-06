@@ -1,6 +1,8 @@
 // API Configuration
-// Use environment variable for backend URL, with deployed backend as production default
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-backend-ympg.onrender.com';
+// Use environment variable for backend URL, with Android emulator / local LAN host as default
+// Emulator: http://10.0.2.2:8000
+// Real phone: http://192.168.x.x:8000
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.0.2.2:8000';
 export const API_BASE_URL = `${BACKEND_URL}/api`;
 
 // API Endpoints
@@ -12,9 +14,9 @@ export const API_ENDPOINTS = {
     REFRESH: '/auth/refresh',
   },
   HAZARDS: {
-    LIST: '/events',
-    REPORT: '/hazards/report',
-    HISTORY: '/events',
+    LIST: '/reports',
+    REPORT: '/report',
+    HISTORY: '/reports',
   },
   PREDICT: '/predict',
   WEATHER: '/weather',
@@ -22,7 +24,7 @@ export const API_ENDPOINTS = {
   ADMIN: {
     USERS: '/admin/users',
     STATS: '/admin/stats',
-    REPORTS: '/admin/reports',
+    REPORTS: '/reports',
   },
 };
 

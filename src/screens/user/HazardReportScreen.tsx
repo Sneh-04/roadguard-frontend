@@ -67,44 +67,18 @@ export default function HazardReportScreen() {
 
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
+      const payload = {
+        type: description.toLowerCase().includes('pothole') ? 'POTHOLE' : 'SPEEDBUMP',
+        latitude: location.latitude,
+        longitude: location.longitude,
+        timestamp: new Date().toISOString(),
+        description,
+      };
 
-      // Create form data with image and metadata
-      const formData = new FormData();
-      
-      // Add image
-      const imageParts = imageUri.split('/');
-      const imageName = imageParts[imageParts.length - 1] || 'hazard_report.jpg';
-      
-      formData.append('image', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: imageName,
-      } as any);
+      const response = await apiService.reportHazard(payload);
 
-      // Add metadata
-      formData.append('latitude', location.latitude.toString());
-      formData.append('longitude', location.longitude.toString());
-      formData.append('description', description);
-
-      // Upload to backend
-      const response = await axios.post(
-        `${API_BASE_URL}/hazards/report`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-
-      if (response.status === 200 || response.status === 201) {
+      if (response.success) {
         setSubmitted(true);
-        // Reset form after 2 seconds
         setTimeout(() => {
           setImageUri(null);
           setDescription('Pothole detected');
@@ -115,10 +89,12 @@ export default function HazardReportScreen() {
             [{ text: 'OK', onPress: () => navigation.goBack() }]
           );
         }, 2000);
+      } else {
+        throw new Error(response.error || 'Failed to submit report');
       }
     } catch (error: any) {
       console.error('Upload error:', error);
-      const message = error.response?.data?.detail || 
+      const message = error.response?.data?.detail ||
                      error.message ||
                      'Failed to submit report. Please try again.';
       Alert.alert('Error', message);
