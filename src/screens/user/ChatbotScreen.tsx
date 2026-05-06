@@ -73,151 +73,52 @@ interface ChatMessage {
 }
 
 export default function ChatbotScreen() {
-  const navigation = useNavigation();
-  const { location } = useLocation();
-  const { hazards } = useHazards();
+  return (
+    <View style={styles.container}>
+      <View style={styles.centerContent}>
+        <Text style={styles.icon}>🤖</Text>
+        <Text style={styles.title}>AI Assistant</Text>
+        <Text style={styles.message}>Coming Soon!</Text>
+        <Text style={styles.subtitle}>Advanced road safety assistance will be available soon.</Text>
+      </View>
+    </View>
+  );
+}
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      text: "Hello! I'm RoadGuard AI, your intelligent road safety assistant. I can help you with real-time hazard information, navigation guidance, and answer questions about road safety. How can I assist you today?",
-      isUser: false,
-      timestamp: new Date(),
-    },
-  ]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.primary,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  icon: {
+    fontSize: 80,
+    marginBottom: spacing.lg,
+  },
+  title: {
+    ...typography.text.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  message: {
+    ...typography.text.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.accent,
+    marginBottom: spacing.lg,
+  },
+  subtitle: {
+    ...typography.text.md,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+});
 
-  const flatListRef = useRef<FlatList>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-
-  // Voice recording setup
-  useEffect(() => {
-    const setupAudio = async () => {
-      try {
-        await Audio.requestPermissionsAsync();
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (error) {
-        console.error('Failed to setup audio:', error);
-      }
-    };
-
-    setupAudio();
-  }, []);
-
-  const startRecording = async () => {
-    try {
-      setIsRecording(true);
-
-      const recording = new Audio.Recording();
-      recordingRef.current = recording;
-
-      await recording.prepareToRecordAsync();
-      await recording.startAsync();
-
-      // Auto-stop after 10 seconds
-      setTimeout(() => {
-        if (isRecording) {
-          stopRecording();
-        }
-      }, 10000);
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      setIsRecording(false);
-      Alert.alert('Error', 'Failed to start voice recording');
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      if (!recordingRef.current) return;
-
-      setIsRecording(false);
-      await recordingRef.current.stopAndUnloadAsync();
-
-      const uri = recordingRef.current.getURI();
-      if (uri) {
-        // Here you would typically send the audio file to a speech-to-text service
-        // For now, we'll simulate this with a placeholder
-        const transcribedText = "Voice input received (speech-to-text would process this)";
-        setInputText(transcribedText);
-        sendMessage(transcribedText, true);
-      }
-    } catch (error) {
-      console.error('Failed to stop recording:', error);
-      setIsRecording(false);
-    }
-  };
-
-  const speakMessage = async (text: string) => {
-    if (isSpeaking) {
-      Speech.stop();
-      setIsSpeaking(false);
-      return;
-    }
-
-    setIsSpeaking(true);
-
-    try {
-      await Speech.speak(text, {
-        language: 'en',
-        pitch: 1.0,
-        rate: 0.9,
-        onDone: () => setIsSpeaking(false),
-        onError: () => setIsSpeaking(false),
-      });
-    } catch (error) {
-      console.error('Speech error:', error);
-      setIsSpeaking(false);
-    }
-  };
-
-  const sendMessage = async (text: string = inputText, isVoice: boolean = false) => {
-    if (!text.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      text: text.trim(),
-      isUser: true,
-      timestamp: new Date(),
-      isVoice,
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
-
-    try {
-      // Prepare context for AI
-      const context = {
-        location,
-        nearbyHazards: hazards.filter(h => h.distance && h.distance < 5),
-        currentTime: new Date().toISOString(),
-        userQuery: text.trim(),
-      };
-
-      const response = await apiService.sendMessage(text.trim(), context);
-
-      if (response.success && response.data) {
-        const aiMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          text: response.data.response,
-          isUser: false,
-          timestamp: new Date(),
-        };
-
-        setMessages(prev => [...prev, aiMessage]);
-
-        // Auto-scroll to bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       } else {
         throw new Error(response.error || 'Failed to get AI response');

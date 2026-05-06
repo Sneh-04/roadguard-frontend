@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -67,12 +68,18 @@ export default function HazardReportScreen() {
 
     setLoading(true);
     try {
+      // Convert image to base64
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: 'base64',
+      });
+
       const payload = {
         type: description.toLowerCase().includes('pothole') ? 'POTHOLE' : 'SPEEDBUMP',
         latitude: location.latitude,
         longitude: location.longitude,
         timestamp: new Date().toISOString(),
         description,
+        image: base64,
       };
 
       const response = await apiService.reportHazard(payload);

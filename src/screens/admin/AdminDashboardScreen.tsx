@@ -41,25 +41,47 @@ export default function AdminDashboardScreen() {
 
   useEffect(() => {
     loadDashboardData();
+    // Refresh every 5 seconds for real-time feel
+    const interval = setInterval(loadDashboardData, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
 
-      // Load system stats
-      const statsResponse = await apiService.getSystemStats();
-      if (statsResponse.success) {
-        setStats(statsResponse.data);
-      }
-
-      // Load recent hazards
+      // Load reports and calculate stats
       const hazardsResponse = await apiService.getHazards();
       if (hazardsResponse.success && Array.isArray(hazardsResponse.data)) {
-        setRecentHazards(hazardsResponse.data.slice(0, 5)); // Get first 5
+        const reports = hazardsResponse.data;
+        setRecentHazards(reports.slice(0, 5));
+
+        // Calculate stats from reports
+        const total = reports.length;
+        const solved = reports.filter((r: any) => r.status === 'solved').length;
+        const ignored = reports.filter((r: any) => r.status === 'ignored').length;
+        const active = total - solved - ignored;
+
+        setStats({
+          total_users: 1,
+          total_hazards: total,
+          active_hazards: active,
+          total_reports: solved,
+          system_health: 'healthy',
+          uptime: 'Running',
+        });
       }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
+      // Set default stats on error
+      setStats({
+        total_users: 0,
+        total_hazards: 0,
+        active_hazards: 0,
+        total_reports: 0,
+        system_health: 'offline',
+        uptime: 'Unknown',
+      });
     } finally {
       setLoading(false);
     }

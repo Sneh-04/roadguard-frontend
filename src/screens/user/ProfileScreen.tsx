@@ -59,24 +59,27 @@ export default function ProfileScreen() {
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getProfile();
-
-      if (response.success && response.data) {
-        setProfile(response.data);
-      } else {
-        // Load from local storage as fallback
-        const localProfile = await AsyncStorage.getItem('userData');
-        if (localProfile) {
-          setProfile(JSON.parse(localProfile));
-        }
-      }
+      // Use static user data instead of API call
+      const staticProfile: UserProfile = {
+        id: '1',
+        email: 'guest@roadguard.com',
+        full_name: 'Guest User',
+        role: 'user',
+        created_at: new Date().toISOString(),
+        preferences: {
+          notifications: true,
+          location_tracking: true,
+          auto_monitoring: true,
+          voice_assistant: false,
+          dark_mode: true,
+          units: 'metric',
+          language: 'en',
+        },
+      };
+      setProfile(staticProfile);
+      await AsyncStorage.setItem('userData', JSON.stringify(staticProfile));
     } catch (error) {
       console.error('Failed to load profile:', error);
-      // Load from local storage
-      const localProfile = await AsyncStorage.getItem('userData');
-      if (localProfile) {
-        setProfile(JSON.parse(localProfile));
-      }
     } finally {
       setLoading(false);
     }

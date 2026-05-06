@@ -9,6 +9,7 @@ import {
   RefreshControl,
   SafeAreaView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
@@ -22,8 +23,9 @@ interface HazardReport {
   latitude: number;
   longitude: number;
   description: string;
-  image_path: string;
-  status: 'pending' | 'reviewed' | 'resolved';
+  image?: string;
+  image_path?: string;
+  status: 'pending' | 'reviewed' | 'resolved' | 'solved' | 'ignored';
   created_at: string;
 }
 
@@ -63,9 +65,9 @@ export default function AdminAlertsScreen() {
     }
   };
 
-  const handleUpdateStatus = async (reportId: number, newStatus: 'reviewed' | 'resolved') => {
+  const handleUpdateStatus = async (reportId: number, newStatus: 'solved' | 'ignored') => {
     try {
-      const response = await apiService.request<any>('PUT', `/reports/${reportId}/status`, { status: newStatus });
+      const response = await apiService.request<any>('PUT', `/report/${reportId}`, { status: newStatus });
 
       if (response.success) {
         setReports(prev =>
