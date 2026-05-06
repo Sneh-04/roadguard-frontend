@@ -1,6 +1,6 @@
 // API Configuration
 // Use environment variable for backend URL, with deployed backend as production default
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-ai-3.onrender.com';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-backend-ympg.onrender.com';
 export const API_BASE_URL = `${BACKEND_URL}/api`;
 
 // API Endpoints

@@ -37,6 +37,8 @@ class NotificationService {
     // Set notification handler
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
@@ -234,6 +236,7 @@ class NotificationService {
         sound: false,
       },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         hour: 8,
         minute: 0,
         repeats: true,

@@ -40,7 +40,9 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      console.log('Trying login...');
       const response = await apiService.login(email.trim().toLowerCase(), password);
+      console.log('Response:', response);
 
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Login failed');
@@ -56,7 +58,11 @@ export default function LoginScreen() {
       // No need to navigate here as AppNavigator will show the correct navigator
     } catch (error) {
       console.error('Login error:', error);
-      const message = (error as any)?.response?.data?.detail || 'Login failed. Please try again.';
+      const message =
+        (error as any)?.response?.data?.detail ||
+        (error as any)?.response?.data?.message ||
+        (error as Error).message ||
+        'Login failed. Please try again.';
       Alert.alert('Login Failed', message);
     } finally {
       setLoading(false);

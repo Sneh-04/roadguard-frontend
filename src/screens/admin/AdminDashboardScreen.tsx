@@ -55,7 +55,7 @@ export default function AdminDashboardScreen() {
 
       // Load recent hazards
       const hazardsResponse = await apiService.getHazards();
-      if (hazardsResponse.success && hazardsResponse.data) {
+      if (hazardsResponse.success && Array.isArray(hazardsResponse.data)) {
         setRecentHazards(hazardsResponse.data.slice(0, 5)); // Get first 5
       }
     } catch (error) {

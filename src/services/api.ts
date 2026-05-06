@@ -22,6 +22,7 @@ class ApiService {
   });
 
   constructor() {
+    console.log('[ApiService] API_BASE_URL:', API_BASE_URL);
     // Add request interceptor to include auth token
     this.axiosInstance.interceptors.request.use(
       async (config) => {

@@ -540,6 +540,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  alertIcon: {
+    ...typography.text.lg,
+    color: colors.text,
+    marginRight: spacing.sm,
+  },
   reportButton: {
     flexDirection: 'row',
     alignItems: 'center',
