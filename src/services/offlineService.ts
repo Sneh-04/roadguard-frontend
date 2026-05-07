@@ -178,10 +178,13 @@ class OfflineService {
   }
 
   async queueHazardReport(hazardData: {
-    hazard_type: number;
+    hazard_type?: number;
+    type?: string;
     latitude: number;
     longitude: number;
-    confidence: number;
+    confidence?: number;
+    timestamp?: string;
+    description?: string;
   }): Promise<boolean> {
     const queueItem: OfflineQueueItem = {
       id: `hazard_${Date.now()}_${Math.random()}`,

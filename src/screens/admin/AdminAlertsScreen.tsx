@@ -65,7 +65,7 @@ export default function AdminAlertsScreen() {
     }
   };
 
-  const handleUpdateStatus = async (reportId: number, newStatus: 'solved' | 'ignored') => {
+  const handleUpdateStatus = async (reportId: number, newStatus: 'solved' | 'ignored' | 'reviewed' | 'resolved') => {
     try {
       const response = await apiService.request<any>('PUT', `/report/${reportId}`, { status: newStatus });
 

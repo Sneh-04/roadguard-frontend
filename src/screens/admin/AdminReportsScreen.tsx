@@ -38,7 +38,7 @@ export default function AdminReportsScreen() {
     try {
       setLoading(true);
       const response = await apiService.getHazards();
-      const hazardsData = response.data?.reports ?? response.data ?? [];
+      const hazardsData = Array.isArray(response.data) ? response.data : (response.data as any)?.reports ?? [];
 
       if (response.success && Array.isArray(hazardsData)) {
         setHazards(hazardsData);

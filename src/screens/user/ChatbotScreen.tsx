@@ -1,87 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Audio } from 'expo-av';
-
-// Web-safe Speech API
-const Speech = {
-  speak: async (text: string, options?: any) => {
-    if (Platform.OS === 'web' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = options?.rate || 0.9;
-      utterance.pitch = options?.pitch || 1.0;
-      if (options?.language) utterance.lang = options.language;
-      
-      if (options?.onDone) {
-        utterance.onend = options.onDone;
-      }
-      if (options?.onError) {
-        utterance.onerror = options.onError;
-      }
-      
-      window.speechSynthesis.speak(utterance);
-      return Promise.resolve();
-    }
-    // Fallback for native - use expo-speech if available
-    try {
-      const ExpoSpeech = require('expo-speech');
-      return await ExpoSpeech.speak(text, options);
-    } catch {
-      return Promise.resolve();
-    }
-  },
-  stop: () => {
-    if (Platform.OS === 'web') {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    } else {
-      try {
-        const ExpoSpeech = require('expo-speech');
-        ExpoSpeech.stop?.();
-      } catch {
-        // ignore
-      }
-    }
-  },
-  isSpeakingAsync: async () => false,
-};
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
-import { apiService } from '../../services/api';
-import { useLocation } from '../../hooks/useLocation';
-import { useHazards } from '../../hooks/useHazards';
-
-interface ChatMessage {
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
-  isVoice?: boolean;
-}
 
 export default function ChatbotScreen() {
   return (
-    <View style={styles.container}>
-      <View style={styles.centerContent}>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
         <Text style={styles.icon}>🤖</Text>
         <Text style={styles.title}>AI Assistant</Text>
-        <Text style={styles.message}>Coming Soon!</Text>
-        <Text style={styles.subtitle}>Advanced road safety assistance will be available soon.</Text>
+        <Text style={styles.subtitle}>
+          Coming Soon!{'\n'}
+          Advanced road safety assistance will be available soon.
+        </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -90,444 +29,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.primary,
   },
-  centerContent: {
+  content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    padding: spacing.xl,
   },
   icon: {
-    fontSize: 80,
+    fontSize: 64,
     marginBottom: spacing.lg,
   },
   title: {
-    ...typography.text.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  message: {
-    ...typography.text.lg,
+    ...typography.text.xl,
     fontWeight: typography.fontWeight.bold,
     color: colors.accent,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+    textAlign: 'center',
   },
   subtitle: {
     ...typography.text.md,
     color: colors.textMuted,
     textAlign: 'center',
-  },
-});
-
-        }, 100);
-      } else {
-        throw new Error(response.error || 'Failed to get AI response');
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 2).toString(),
-        text: "I'm sorry, I'm having trouble connecting right now. Please check your internet connection and try again.",
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const renderMessage = ({ item }: { item: ChatMessage }) => (
-    <View style={[
-      styles.messageContainer,
-      item.isUser ? styles.userMessageContainer : styles.aiMessageContainer
-    ]}>
-      <View style={[
-        styles.messageBubble,
-        item.isUser ? styles.userMessageBubble : styles.aiMessageBubble
-      ]}>
-        {item.isVoice && item.isUser && (
-          <Text style={styles.voiceIndicator}>🎤 </Text>
-        )}
-        <Text style={[
-          styles.messageText,
-          item.isUser ? styles.userMessageText : styles.aiMessageText
-        ]}>
-          {item.text}
-        </Text>
-      </View>
-
-      {!item.isUser && (
-        <TouchableOpacity
-          style={styles.speakButton}
-          onPress={() => speakMessage(item.text)}
-        >
-          <Text style={styles.speakButtonText}>
-            {isSpeaking ? '⏸️' : '🔊'}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      <Text style={styles.timestamp}>
-        {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
-    </View>
-  );
-
-  const getQuickSuggestions = () => {
-    const suggestions = [
-      "What's the safest route to downtown?",
-      "Are there any hazards near me?",
-      "How does the sensor fusion work?",
-      "Tell me about road safety tips",
-      "What's my current location status?",
-    ];
-
-    // Filter out suggestions that are too similar to recent messages
-    const recentTexts = messages.slice(-3).map(m => m.text.toLowerCase());
-    return suggestions.filter(suggestion =>
-      !recentTexts.some(recent =>
-        recent.includes(suggestion.toLowerCase().slice(0, 20))
-      )
-    ).slice(0, 3);
-  };
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>RoadGuard AI</Text>
-          <Text style={styles.headerSubtitle}>
-            {isLoading ? 'Thinking...' : 'Online'}
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.headerButton, isSpeaking && styles.headerButtonActive]}
-            onPress={() => {
-              if (isSpeaking) {
-                Speech.stop();
-                setIsSpeaking(false);
-              }
-            }}
-          >
-            <Text style={styles.headerButtonText}>🔊</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContainer}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        showsVerticalScrollIndicator={false}
-      />
-
-      {/* Quick Suggestions */}
-      {messages.length === 1 && !isLoading && (
-        <View style={styles.suggestionsContainer}>
-          <Text style={styles.suggestionsTitle}>Quick Questions</Text>
-          <View style={styles.suggestionsList}>
-            {getQuickSuggestions().map((suggestion, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.suggestionButton}
-                onPress={() => sendMessage(suggestion)}
-              >
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Loading Indicator */}
-      {isLoading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={colors.accent} />
-          <Text style={styles.loadingText}>AI is thinking...</Text>
-        </View>
-      )}
-
-      {/* Input Area */}
-      <View style={styles.inputContainer}>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.textInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask me anything about road safety..."
-            placeholderTextColor={colors.textMuted}
-            multiline
-            maxLength={500}
-            onSubmitEditing={() => sendMessage()}
-          />
-
-          <TouchableOpacity
-            style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
-            onPress={isRecording ? stopRecording : startRecording}
-          >
-            <Text style={styles.voiceButtonText}>
-              {isRecording ? '⏹️' : '🎤'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
-            onPress={() => sendMessage()}
-            disabled={!inputText.trim() || isLoading}
-          >
-            <Text style={styles.sendButtonText}>➤</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recording Indicator */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <Text style={styles.recordingText}>🎤 Recording... Tap to stop</Text>
-          </View>
-        )}
-      </View>
-    </KeyboardAvoidingView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.primary,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceLight,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerInfo: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...typography.text.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSubtitle: {
-    ...typography.text.sm,
-    color: colors.accent,
-    marginTop: spacing.xs,
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: spacing.sm,
-  },
-  headerButtonActive: {
-    backgroundColor: colors.accent,
-  },
-  headerButtonText: {
-    fontSize: 16,
-  },
-  messagesList: {
-    flex: 1,
-  },
-  messagesContainer: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  messageContainer: {
-    marginBottom: spacing.md,
-    maxWidth: '80%',
-  },
-  userMessageContainer: {
-    alignSelf: 'flex-end',
-    alignItems: 'flex-end',
-  },
-  aiMessageContainer: {
-    alignSelf: 'flex-start',
-    alignItems: 'flex-start',
-  },
-  messageBubble: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 18,
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  userMessageBubble: {
-    backgroundColor: colors.accent,
-    borderBottomRightRadius: 4,
-  },
-  aiMessageBubble: {
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  voiceIndicator: {
-    fontSize: 14,
-    marginRight: spacing.xs,
-  },
-  messageText: {
-    ...typography.text.md,
-    lineHeight: 20,
-    flex: 1,
-  },
-  userMessageText: {
-    color: colors.text,
-  },
-  aiMessageText: {
-    color: colors.text,
-  },
-  speakButton: {
-    marginTop: spacing.xs,
-    padding: spacing.xs,
-  },
-  speakButtonText: {
-    fontSize: 16,
-  },
-  timestamp: {
-    ...typography.text.xs,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-  suggestionsContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  suggestionsTitle: {
-    ...typography.text.sm,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-  },
-  suggestionsList: {
-    gap: spacing.sm,
-  },
-  suggestionButton: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.surfaceLight,
-  },
-  suggestionText: {
-    ...typography.text.md,
-    color: colors.text,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.md,
-  },
-  loadingText: {
-    ...typography.text.sm,
-    color: colors.textMuted,
-    marginLeft: spacing.sm,
-  },
-  inputContainer: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceLight,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.md,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 20,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginRight: spacing.sm,
-    maxHeight: 100,
-    ...typography.text.md,
-    color: colors.text,
-  },
-  voiceButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  voiceButtonRecording: {
-    backgroundColor: colors.danger,
-  },
-  voiceButtonText: {
-    fontSize: 18,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonDisabled: {
-    backgroundColor: colors.surfaceLight,
-    opacity: 0.5,
-  },
-  sendButtonText: {
-    fontSize: 18,
-    color: colors.text,
-  },
-  recordingIndicator: {
-    marginTop: spacing.sm,
-    alignItems: 'center',
-  },
-  recordingText: {
-    ...typography.text.sm,
-    color: colors.danger,
-    fontWeight: typography.fontWeight.medium,
+    lineHeight: 24,
   },
 });
