@@ -24,7 +24,7 @@ export const useHazards = () => {
   const [error, setError] = useState<string | null>(null);
   const { location } = useLocation();
   const mountedRef = useRef(true);
-  const fetchRef = useRef<() => Promise<void>>();
+  const fetchRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -143,14 +143,15 @@ export const useHazards = () => {
         const lastNotified = await AsyncStorage.getItem(notifiedKey);
 
         if (!lastNotified || Date.now() - parseInt(lastNotified, 10) > 5 * 60 * 1000) {
-          await notificationService.sendHazardAlert({
-            hazardId: hazard.id,
-            hazardType: hazard.hazard_type,
-            latitude: hazard.latitude,
-            longitude: hazard.longitude,
-            confidence: hazard.confidence,
-            distance: hazard.distance || 0,
-          });
+          // Notification disabled for Expo Go testing
+          // await notificationService.sendHazardAlert({
+          //   hazardId: hazard.id,
+          //   hazardType: hazard.hazard_type,
+          //   latitude: hazard.latitude,
+          //   longitude: hazard.longitude,
+          //   confidence: hazard.confidence,
+          //   distance: hazard.distance || 0,
+          // });
           await AsyncStorage.setItem(notifiedKey, Date.now().toString());
         }
       }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Text, View, StyleSheet } from 'react-native';
@@ -102,17 +103,19 @@ function TabNavigator() {
 
 export default function UserNavigator() {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Stack.Screen name="MainTabs" component={TabNavigator} />
-      <Stack.Screen name="HazardHistory" component={HazardHistoryScreen} />
-      <Stack.Screen name="HazardReport" component={HazardReportScreen} />
-      <Stack.Screen name="Monitor" component={MonitorScreen} />
-      <Stack.Screen name="Weather" component={WeatherScreen} />
-    </Stack.Navigator>
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <Stack.Screen name="MainTabs" component={TabNavigator} />
+        <Stack.Screen name="HazardHistory" component={HazardHistoryScreen} />
+        <Stack.Screen name="HazardReport" component={HazardReportScreen} />
+        <Stack.Screen name="Monitor" component={MonitorScreen} />
+        <Stack.Screen name="Weather" component={WeatherScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
 

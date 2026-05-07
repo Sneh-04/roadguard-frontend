@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { Accelerometer, Gyroscope, AccelerometerMeasurement, GyroscopeMeasurement } from 'expo-sensors';
 import { apiService } from '../services/api';
 import { useLocation } from './useLocation';
@@ -123,10 +124,34 @@ export const useRoadHazardDetection = () => {
   }, [sendDetection, speed, status]);
 
   const startMonitoring = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      setError('Sensor monitoring is not available on web');
+      setStatus('ERROR');
+      return false;
+    }
+
     try {
       setError(null);
+
+      const accelAvailable = await Accelerometer.isAvailableAsync();
+      const gyroAvailable = await Gyroscope.isAvailableAsync();
+      if (!accelAvailable || !gyroAvailable) {
+        setError('Sensor monitoring is not available on this device');
+        setStatus('ERROR');
+        return false;
+      }
+
       Accelerometer.setUpdateInterval(120);
       Gyroscope.setUpdateInterval(120);
+
+      if (accelSubscription.current) {
+        accelSubscription.current.remove?.();
+        accelSubscription.current = null;
+      }
+      if (gyroSubscription.current) {
+        gyroSubscription.current.remove?.();
+        gyroSubscription.current = null;
+      }
 
       accelSubscription.current = Accelerometer.addListener((data: AccelerometerMeasurement) => {
         motionState.current.latestAccel = data;

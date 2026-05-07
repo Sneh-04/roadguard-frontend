@@ -281,7 +281,7 @@ export default function ProfileScreen() {
         ],
       },
       {
-        title: 'Account',
+        title: 'Account Actions',
         items: [
           {
             id: 'logout',

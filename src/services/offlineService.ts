@@ -155,19 +155,7 @@ class OfflineService {
   }
 
   async getCachedWeather(latitude: number, longitude: number): Promise<any | null> {
-    if (this.isOnline && Date.now() - this.cache.lastSync > 30 * 60 * 1000) { // 30 minutes for weather
-      try {
-        const { apiService } = require('./api');
-        const response = await apiService.getWeather(latitude, longitude);
-        if (response.success && response.data) {
-          this.cache.weather = response.data;
-          this.cache.lastSync = Date.now();
-          await this.saveCache();
-        }
-      } catch (error) {
-        console.error('Failed to refresh weather cache:', error);
-      }
-    }
+    // Just return cached weather data - let the caller handle refreshing
     return this.cache.weather;
   }
 

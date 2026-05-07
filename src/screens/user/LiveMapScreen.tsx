@@ -11,7 +11,6 @@ import {
   Image,
   Platform,
 } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { BlurView } from 'expo-blur';
 import { useNavigation } from '@react-navigation/native';
 import { useHazards } from '../../hooks/useHazards';
@@ -20,6 +19,24 @@ import { useRoadHazardDetection } from '../../hooks/useRoadHazardDetection';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { HAZARD_COLORS, HAZARD_LABELS, HAZARD_EMOJIS, MAP_DARK_STYLE } from '../../utils/constants';
+
+// Conditionally import MapView for native platforms only
+let MapView, Marker, Circle, PROVIDER_GOOGLE;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  Circle = Maps.Circle;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+}
+
+// Define Region type
+type Region = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
 
 const { width, height } = Dimensions.get('window');
 const BOTTOM_SHEET_HEIGHT = Math.min(280, height * 0.36);
@@ -113,6 +130,104 @@ export default function LiveMapScreen() {
 
   const mapReady = !locationLoading && !!location;
 
+  if (Platform.OS === 'web') {
+    // Web fallback - show map placeholder
+    return (
+      <View style={styles.container}>
+        <View style={[styles.map, styles.webMapPlaceholder]}>
+          <View style={styles.webMapContent}>
+            <Text style={styles.webMapTitle}>🗺️ Interactive Map</Text>
+            <Text style={styles.webMapSubtitle}>Map view available on mobile devices</Text>
+            <Text style={styles.webMapHint}>Use Expo Go app for full map experience</Text>
+          </View>
+        </View>
+
+        <BlurView intensity={90} tint="dark" style={styles.headerOverlay}>
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.appTitle}>RoadGuard</Text>
+              <Text style={styles.appSubtitle}>Live hazard monitoring</Text>
+            </View>
+            <TouchableOpacity style={styles.refreshButton} onPress={fetchHazards}>
+              <Text style={styles.refreshText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.metricsRow}>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>Speed</Text>
+              <Text style={styles.metricValue}>{speed} km/h</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>Status</Text>
+              <Text style={styles.metricValue}>{statusLabel}</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>Alerts</Text>
+              <Text style={styles.metricValue}>{hazards.length}</Text>
+            </View>
+          </View>
+        </BlurView>
+
+        <View style={styles.fabGroup}>
+          <TouchableOpacity style={[styles.fabButton, isMonitoring ? styles.fabActive : styles.fabInactive]} onPress={toggleMonitoring}>
+            <Text style={styles.fabText}>{isMonitoring ? 'Stop' : 'Start'}</Text>
+            <Text style={styles.fabSubtext}>Monitoring</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.fabButton} onPress={() => (navigation as any).navigate('HazardReport')}>
+            <Text style={styles.fabText}>Report</Text>
+            <Text style={styles.fabSubtext}>Hazard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.fabButton} onPress={() => (navigation as any).navigate('Monitor')}>
+            <Text style={styles.fabText}>Sensor</Text>
+            <Text style={styles.fabSubtext}>Details</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            { transform: [{ translateY: bottomSheetAnim }] },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Nearby hazards</Text>
+            <Text style={styles.sheetSubtitle}>{nearbyHazards.length} visible</Text>
+          </View>
+          {loading ? (
+            <View style={styles.sheetLoader}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : (
+            <FlatList
+              data={nearbyHazards}
+              keyExtractor={(item) => item.id}
+              renderItem={renderHazardRow}
+              ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </Animated.View>
+
+        {selectedHazard && (
+          <View style={styles.hazardPreview}>
+            <Text style={styles.previewTitle}>Selected hazard details</Text>
+            <Text style={styles.previewLabel}>{HAZARD_LABELS[hazards.find(item => item.id === selectedHazard)?.hazard_type ?? 0]}</Text>
+            <Text style={styles.previewText}>
+              {hazards.find(item => item.id === selectedHazard)?.description || 'No description available'}
+            </Text>
+          </View>
+        )}
+
+        {error ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <MapView
@@ -180,11 +295,11 @@ export default function LiveMapScreen() {
           <Text style={styles.fabText}>{isMonitoring ? 'Stop' : 'Start'}</Text>
           <Text style={styles.fabSubtext}>Monitoring</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.fabButton} onPress={() => navigation.navigate('HazardReport')}> 
+        <TouchableOpacity style={styles.fabButton} onPress={() => (navigation as any).navigate('HazardReport')}>
           <Text style={styles.fabText}>Report</Text>
           <Text style={styles.fabSubtext}>Hazard</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.fabButton} onPress={() => navigation.navigate('Monitor')}> 
+        <TouchableOpacity style={styles.fabButton} onPress={() => (navigation as any).navigate('Monitor')}>
           <Text style={styles.fabText}>Sensor</Text>
           <Text style={styles.fabSubtext}>Details</Text>
         </TouchableOpacity>
@@ -472,5 +587,32 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.text,
     fontWeight: '700',
+  },
+  webMapPlaceholder: {
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  webMapContent: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  webMapTitle: {
+    fontSize: 24,
+    color: colors.text,
+    fontWeight: '800',
+    marginBottom: spacing.sm,
+  },
+  webMapSubtitle: {
+    fontSize: 16,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  webMapHint: {
+    fontSize: 14,
+    color: colors.accent,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });

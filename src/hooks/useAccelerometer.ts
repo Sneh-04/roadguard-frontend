@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { Accelerometer, AccelerometerMeasurement } from 'expo-sensors';
 
 interface AccelerometerData {
@@ -12,10 +13,16 @@ export const useAccelerometer = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const subscriptionRef = useRef<any>(null);
 
   // Request permissions on mount
   useEffect(() => {
     const requestPermissions = async () => {
+      if (Platform.OS === 'web') {
+        setError('Accelerometer sensor is not available on web');
+        return;
+      }
+
       try {
         // Note: Accelerometer doesn't require explicit permissions in most cases
         // but we check if the sensor is available
@@ -35,6 +42,11 @@ export const useAccelerometer = () => {
   }, []);
 
   const startMonitoring = async (): Promise<boolean> => {
+    if (Platform.OS === 'web') {
+      setError('Accelerometer monitoring is not available on web');
+      return false;
+    }
+
     if (!permissionGranted) {
       setError('Accelerometer permission not granted');
       return false;
@@ -46,6 +58,11 @@ export const useAccelerometer = () => {
       // Set update interval to 120ms to balance responsiveness and battery use
       Accelerometer.setUpdateInterval(120);
 
+      if (subscriptionRef.current) {
+        subscriptionRef.current.remove?.();
+        subscriptionRef.current = null;
+      }
+
       const subscription = Accelerometer.addListener((data: AccelerometerMeasurement) => {
         setAccelerometerData({
           x: data.x,
@@ -54,10 +71,8 @@ export const useAccelerometer = () => {
         });
       });
 
+      subscriptionRef.current = subscription;
       setIsMonitoring(true);
-
-      // Store subscription for cleanup
-      (global as any).__accelerometerSubscription = subscription;
 
       return true;
     } catch (err) {
@@ -69,10 +84,9 @@ export const useAccelerometer = () => {
 
   const stopMonitoring = async (): Promise<void> => {
     try {
-      const subscription = (global as any).__accelerometerSubscription;
-      if (subscription) {
-        subscription.remove();
-        (global as any).__accelerometerSubscription = null;
+      if (subscriptionRef.current) {
+        subscriptionRef.current.remove?.();
+        subscriptionRef.current = null;
       }
 
       setIsMonitoring(false);

@@ -8,7 +8,6 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { BlurView } from 'expo-blur';
 import { useLocation } from '../../hooks/useLocation';
 import { useHazards } from '../../hooks/useHazards';
@@ -16,6 +15,24 @@ import { apiService } from '../../services/api';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { HAZARD_COLORS, HAZARD_LABELS, HAZARD_EMOJIS, MAP_DARK_STYLE } from '../../utils/constants';
+
+// Conditionally import MapView for native platforms only
+let MapView, Marker, Circle, PROVIDER_GOOGLE;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  Circle = Maps.Circle;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+}
+
+// Define Region type
+type Region = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
 
 const initialRegion: Region = {
   latitude: 20.5937,
@@ -82,6 +99,36 @@ export default function AdminMapScreen() {
       },
     ]);
   };
+
+  if (Platform.OS === 'web') {
+    // Web fallback - show map placeholder
+    return (
+      <View style={styles.container}>
+        <View style={[styles.map, styles.webMapPlaceholder]}>
+          <View style={styles.webMapContent}>
+            <Text style={styles.webMapTitle}>🗺️ Admin Map View</Text>
+            <Text style={styles.webMapSubtitle}>Interactive map available on mobile devices</Text>
+            <Text style={styles.webMapHint}>Use Expo Go app for full admin map experience</Text>
+          </View>
+        </View>
+
+        <BlurView intensity={85} tint="dark" style={styles.topBadge}>
+          <View>
+            <Text style={styles.topTitle}>Admin Live Map</Text>
+            <Text style={styles.topSubtitle}>{hazards.length} reports · Web preview</Text>
+          </View>
+          <TouchableOpacity style={styles.topAction} onPress={fetchHazards} disabled={loading}>
+            <Text style={styles.topActionText}>{loading ? 'Refreshing...' : 'Refresh'}</Text>
+          </TouchableOpacity>
+        </BlurView>
+
+        <View style={styles.hintCard}>
+          <Text style={styles.hintTitle}>Admin controls available on mobile</Text>
+          <Text style={styles.hintText}>Solve, ignore, or delete hazard reports with real-time updates to users.</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -309,5 +356,32 @@ const styles = StyleSheet.create({
   },
   markerPinText: {
     fontSize: 14,
+  },
+  webMapPlaceholder: {
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  webMapContent: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  webMapTitle: {
+    fontSize: 24,
+    color: colors.text,
+    fontWeight: '800',
+    marginBottom: spacing.sm,
+  },
+  webMapSubtitle: {
+    fontSize: 16,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  webMapHint: {
+    fontSize: 14,
+    color: colors.accent,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });
