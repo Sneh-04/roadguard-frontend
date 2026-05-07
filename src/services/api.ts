@@ -156,16 +156,10 @@ class ApiService {
     }
   }
 
-  async reportHazard(hazardData: {
-    hazard_type?: number;
-    type?: string;
-    latitude: number;
-    longitude: number;
-    confidence?: number;
-    timestamp?: string;
-    description?: string;
-  }): Promise<ApiResponse<any>> {
-    if (!offlineService.isConnected()) {
+  async reportHazard(hazardData: any): Promise<ApiResponse<any>> {
+    const isFormData = hazardData instanceof FormData || (hazardData && typeof hazardData.append === 'function');
+
+    if (!offlineService.isConnected() && !isFormData) {
       // Queue for later when offline
       const queued = await offlineService.queueHazardReport(hazardData);
       return {
@@ -174,17 +168,39 @@ class ApiService {
       };
     }
 
+    if (isFormData) {
+      try {
+        const response = await this.axiosInstance.post('/report', hazardData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        return { success: true, data: response.data };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.response?.data?.message || error.message || 'Failed to upload hazard image',
+        };
+      }
+    }
+
     return this.makeRequest('POST', '/report', hazardData);
   }
 
   async reportDetection(detectionData: {
     type: string;
+    hazard_type?: number;
     latitude?: number;
     longitude?: number;
     timestamp: string;
     confidence?: number;
+    speed?: number;
   }): Promise<ApiResponse<any>> {
     return this.makeRequest('POST', '/report', detectionData);
+  }
+
+  async ignoreHazard(hazardId: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('PUT', `/events/${hazardId}`, { status: 'ignored' });
   }
 
   async getHazardHistory(limit: number = 50): Promise<ApiResponse<any[]>> {

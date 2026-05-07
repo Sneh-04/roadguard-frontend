@@ -54,12 +54,18 @@ export default function MonitorScreen() {
   const [sensorData, setSensorData] = useState<SensorData[]>([]);
   const [fusionResults, setFusionResults] = useState<FusionResult[]>([]);
   const [spikeDetected, setSpikeDetected] = useState(false);
-  const [lastSpikeTime, setLastSpikeTime] = useState<number | null>(null);
   const [detectionCount, setDetectionCount] = useState(0);
 
   const { accelerometerData, isMonitoring, startMonitoring, stopMonitoring } = useAccelerometer();
   const { location } = useLocation();
   const mountedRef = useRef(true);
+  const lastSpikeTimeRef = useRef<number>(0);
+  const consecutiveSpikeRef = useRef<number>(0);
+  const lowPassRef = useRef<number | null>(null);
+  const deltaBufferRef = useRef<number[]>([]);
+  const graphBufferRef = useRef<SensorData[]>([]);
+  const graphUpdateCounterRef = useRef<number>(0);
+  const cooldownRef = useRef<boolean>(false);
 
   useEffect(() => {
     return () => {
@@ -68,71 +74,112 @@ export default function MonitorScreen() {
   }, []);
 
   // Spike detection parameters
-  const SPIKE_THRESHOLD = 2.5; // m/s²
-  const SPIKE_COOLDOWN = 2000; // 2 seconds
+  const SPIKE_THRESHOLD = 2.8; // m/s² delta from baseline
+  const SPIKE_COOLDOWN = 3000; // 3 seconds
+  const LOW_PASS_ALPHA = 0.15;
+  const SMOOTHING_WINDOW = 6;
+  const CONFIRMATION_REQUIRED = 2;
+  const SPEED_GATE_KMH = 8;
 
   useEffect(() => {
-    if (accelerometerData && isMonitoring) {
-      const magnitude = Math.sqrt(
-        accelerometerData.x ** 2 +
-        accelerometerData.y ** 2 +
-        accelerometerData.z ** 2
-      );
+    if (!accelerometerData || !isMonitoring) return;
+
+    const rawMagnitude = Math.sqrt(
+      accelerometerData.x ** 2 +
+      accelerometerData.y ** 2 +
+      accelerometerData.z ** 2
+    );
+
+    if (lowPassRef.current === null) {
+      lowPassRef.current = rawMagnitude;
+    }
+
+    const lowPass = LOW_PASS_ALPHA * rawMagnitude + (1 - LOW_PASS_ALPHA) * lowPassRef.current;
+    lowPassRef.current = lowPass;
+
+    const delta = Math.abs(rawMagnitude - lowPass);
+    const deltaBuffer = deltaBufferRef.current;
+    deltaBuffer.push(delta);
+    if (deltaBuffer.length > SMOOTHING_WINDOW) deltaBuffer.shift();
+
+    const avgDelta = deltaBuffer.reduce((sum, value) => sum + value, 0) / deltaBuffer.length;
+    const smoothedDelta = avgDelta;
+
+    const now = Date.now();
+    const speedKmh = location?.speed != null ? location.speed * 3.6 : null;
+    const speedGate = speedKmh == null ? true : speedKmh >= SPEED_GATE_KMH;
+    const cooldownActive = now - lastSpikeTimeRef.current < SPIKE_COOLDOWN;
+    const isSpike = smoothedDelta >= SPIKE_THRESHOLD;
+
+    if (isSpike && speedGate && !cooldownActive) {
+      consecutiveSpikeRef.current += 1;
+    } else {
+      consecutiveSpikeRef.current = 0;
+    }
+
+    if (consecutiveSpikeRef.current >= CONFIRMATION_REQUIRED && speedGate && !cooldownActive) {
+      lastSpikeTimeRef.current = now;
+      cooldownRef.current = true;
+      consecutiveSpikeRef.current = 0;
 
       const newDataPoint: SensorData = {
         x: accelerometerData.x,
         y: accelerometerData.y,
         z: accelerometerData.z,
-        magnitude,
-        timestamp: Date.now(),
+        magnitude: rawMagnitude,
+        timestamp: now,
       };
 
       if (mountedRef.current) {
-        setSensorData(prev => {
-          const updated = [...prev, newDataPoint];
-          return updated.length > MAX_DATA_POINTS ? updated.slice(-MAX_DATA_POINTS) : updated;
-        });
+        setSpikeDetected(true);
+        setDetectionCount(prev => prev + 1);
+        performFusionAnalysis(newDataPoint, smoothedDelta);
       }
 
-      // Spike detection
-      if (magnitude > SPIKE_THRESHOLD) {
-        const now = Date.now();
-        if (!lastSpikeTime || now - lastSpikeTime > SPIKE_COOLDOWN) {
-          if (mountedRef.current) {
-            setSpikeDetected(true);
-            setLastSpikeTime(now);
-            setDetectionCount(prev => prev + 1);
+      setTimeout(() => {
+        if (mountedRef.current) setSpikeDetected(false);
+      }, 1000);
+    }
 
-            // Trigger fusion analysis
-            performFusionAnalysis(newDataPoint);
-          }
+    const newDataPoint: SensorData = {
+      x: accelerometerData.x,
+      y: accelerometerData.y,
+      z: accelerometerData.z,
+      magnitude: rawMagnitude,
+      timestamp: now,
+    };
 
-          // Reset spike detection after animation
-          setTimeout(() => {
-            if (mountedRef.current) setSpikeDetected(false);
-          }, 1000);
-        }
+    graphBufferRef.current.push(newDataPoint);
+    if (graphBufferRef.current.length > MAX_DATA_POINTS) {
+      graphBufferRef.current.shift();
+    }
+
+    graphUpdateCounterRef.current += 1;
+    if (graphUpdateCounterRef.current >= 3) {
+      graphUpdateCounterRef.current = 0;
+      if (mountedRef.current) {
+        setSensorData([...graphBufferRef.current]);
       }
     }
-  }, [accelerometerData, isMonitoring, lastSpikeTime]);
+  }, [accelerometerData, isMonitoring, location]);
 
-  const classifyHazardType = (magnitude: number) => {
-    if (magnitude >= 3.2) return 'POTHOLE';
-    if (magnitude >= SPIKE_THRESHOLD) return 'SPEEDBUMP';
+  const classifyHazardType = (delta: number) => {
+    if (delta >= 3.2) return 'POTHOLE';
+    if (delta >= SPIKE_THRESHOLD) return 'SPEEDBUMP';
     return 'NORMAL';
   };
 
-  const sendDetectionToBackend = async (magnitude: number, timestamp: number) => {
+  const sendDetectionToBackend = async (deltaValue: number, timestamp: number) => {
     try {
       if (mountedRef.current) setMonitorState('PROCESSING');
 
-      const type = classifyHazardType(magnitude);
+      const type = classifyHazardType(deltaValue);
       const payload = {
         type,
         latitude: location?.latitude ?? 0,
         longitude: location?.longitude ?? 0,
         timestamp: new Date(timestamp).toISOString(),
-        confidence: magnitude,
+        confidence: deltaValue,
       };
 
       const response = await apiService.reportDetection(payload);
@@ -141,7 +188,7 @@ export default function MonitorScreen() {
         if (response.success) {
           const result: FusionResult = {
             hazard_type: type === 'POTHOLE' ? 2 : type === 'SPEEDBUMP' ? 1 : 0,
-            confidence: response.data?.confidence ?? Math.min(1, magnitude / 5),
+            confidence: response.data?.confidence ?? Math.min(1, deltaValue / 5),
             sensor_contribution: 1,
             vision_contribution: 0,
             timestamp: payload.timestamp,
@@ -166,17 +213,17 @@ export default function MonitorScreen() {
     }
   };
 
-  const performFusionAnalysis = async (sensorData: SensorData) => {
+  const performFusionAnalysis = async (sensorData: SensorData, deltaValue: number) => {
     try {
-      await sendDetectionToBackend(sensorData.magnitude, sensorData.timestamp);
+      await sendDetectionToBackend(deltaValue, sensorData.timestamp);
     } catch (error) {
       console.error('Fusion analysis failed:', error);
     }
   };
 
   const triggerManualDetection = async () => {
-    const magnitude = sensorData.length > 0 ? sensorData[sensorData.length - 1].magnitude : SPIKE_THRESHOLD + 0.5;
-    await sendDetectionToBackend(magnitude, Date.now());
+    const latestDelta = deltaBufferRef.current.length > 0 ? deltaBufferRef.current[deltaBufferRef.current.length - 1] : SPIKE_THRESHOLD + 0.5;
+    await sendDetectionToBackend(latestDelta, Date.now());
   };
 
   const toggleMonitoring = async () => {
@@ -187,6 +234,13 @@ export default function MonitorScreen() {
         setSensorData([]);
         setFusionResults([]);
         setDetectionCount(0);
+        setSpikeDetected(false);
+        lowPassRef.current = null;
+        deltaBufferRef.current = [];
+        graphBufferRef.current = [];
+        graphUpdateCounterRef.current = 0;
+        consecutiveSpikeRef.current = 0;
+        lastSpikeTimeRef.current = 0;
       }
     } else {
       const success = await startMonitoring();

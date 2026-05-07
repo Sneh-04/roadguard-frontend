@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
@@ -21,6 +22,8 @@ interface Hazard {
   confidence: number;
   created_at: string;
   status: string;
+  image_url?: string;
+  description?: string;
   user_id?: string;
 }
 
@@ -43,11 +46,11 @@ export default function AdminReportsScreen() {
       if (response.success && Array.isArray(hazardsData)) {
         setHazards(hazardsData);
       } else {
-        Alert.alert('Error', 'Failed to load hazards');
+        Alert.alert('Error', 'Failed to load hazard reports');
       }
     } catch (error) {
       console.error('Failed to load hazards:', error);
-      Alert.alert('Error', 'Failed to load hazards');
+      Alert.alert('Error', 'Failed to load hazard reports');
     } finally {
       setLoading(false);
     }
@@ -59,49 +62,46 @@ export default function AdminReportsScreen() {
     setRefreshing(false);
   };
 
-  const handleHazardAction = async (hazardId: string, action: 'resolve' | 'delete') => {
-    Alert.alert(
-      'Confirm Action',
-      `Are you sure you want to ${action} this hazard?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              let response;
-              if (action === 'delete') {
-                response = await apiService.deleteHazard(hazardId);
-              } else if (action === 'resolve') {
-                const hazard = hazards.find(h => h.id === hazardId);
-                if (hazard) {
-                  const updates = { ...hazard, status: 'resolved' };
-                  response = await apiService.updateHazard(hazardId, updates);
-                }
-              }
+  const handleHazardAction = async (hazardId: string, action: 'resolve' | 'ignore' | 'delete') => {
+    const confirmMessage =
+      action === 'delete'
+        ? 'Delete this hazard permanently?'
+        : `Mark this hazard as ${action}?`;
 
-              if (response?.success) {
-                await loadHazards(); // Refresh the list
-                Alert.alert('Success', `Hazard ${action}d successfully`);
-              } else {
-                Alert.alert('Error', `Failed to ${action} hazard`);
-              }
-            } catch (error) {
-              console.error(`Failed to ${action} hazard:`, error);
+    Alert.alert('Confirm Action', confirmMessage, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Confirm',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            let response;
+            if (action === 'delete') {
+              response = await apiService.deleteHazard(hazardId);
+            } else {
+              response = await apiService.updateHazard(hazardId, { status: action });
+            }
+
+            if (response?.success) {
+              await loadHazards();
+              Alert.alert('Success', `Hazard ${action}d successfully`);
+            } else {
               Alert.alert('Error', `Failed to ${action} hazard`);
             }
-          },
+          } catch (error) {
+            console.error(`Failed to ${action} hazard:`, error);
+            Alert.alert('Error', `Failed to ${action} hazard`);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const getHazardTypeLabel = (type: number): string => {
     const types: { [key: number]: string } = {
-      0: 'Normal',
-      1: 'Pothole',
-      2: 'Speed Breaker',
+      0: 'Other',
+      1: 'Speed Breaker',
+      2: 'Pothole',
       3: 'Broken Road',
     };
     return types[type] || 'Unknown';
@@ -115,6 +115,8 @@ export default function AdminReportsScreen() {
         return colors.success;
       case 'pending':
         return colors.warning;
+      case 'ignored':
+        return colors.textMuted;
       default:
         return colors.textMuted;
     }
@@ -128,47 +130,34 @@ export default function AdminReportsScreen() {
   const renderHazardItem = ({ item }: { item: Hazard }) => (
     <View style={styles.hazardItem}>
       <View style={styles.hazardHeader}>
-        <Text style={styles.hazardType}>
-          {getHazardTypeLabel(item.hazard_type)}
-        </Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>{item.status}</Text>
+        <Text style={styles.hazardType}>{getHazardTypeLabel(item.hazard_type)}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}> 
+          <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
         </View>
       </View>
 
-      <Text style={styles.hazardLocation}>
-        {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-      </Text>
+      {item.image_url ? (
+        <Image source={{ uri: item.image_url }} style={styles.hazardImage} />
+      ) : null}
 
+      <Text style={styles.hazardDescription}>{item.description || 'No description provided'}</Text>
+      <Text style={styles.hazardLocation}>Lat {item.latitude.toFixed(4)}, Lon {item.longitude.toFixed(4)}</Text>
       <View style={styles.hazardDetails}>
-        <Text style={styles.hazardConfidence}>
-          Confidence: {(item.confidence * 100).toFixed(1)}%
-        </Text>
-        <Text style={styles.hazardTime}>
-          {new Date(item.created_at).toLocaleDateString()}
-        </Text>
+        <Text style={styles.hazardConfidence}>Confidence: {(item.confidence * 100).toFixed(1)}%</Text>
+        <Text style={styles.hazardTime}>{new Date(item.created_at).toLocaleString()}</Text>
       </View>
 
       <View style={styles.hazardActions}>
         {item.status !== 'resolved' && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.resolveButton]}
-            onPress={() => handleHazardAction(item.id, 'resolve')}
-          >
-            <Text style={styles.resolveButtonText}>Resolve</Text>
+          <TouchableOpacity style={[styles.actionButton, styles.resolveButton]} onPress={() => handleHazardAction(item.id, 'resolve')}>
+            <Text style={styles.actionButtonText}>Solve</Text>
           </TouchableOpacity>
         )}
-
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
-          onPress={() => handleHazardAction(item.id, 'delete')}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
+        <TouchableOpacity style={[styles.actionButton, styles.ignoreButton]} onPress={() => handleHazardAction(item.id, 'ignore')}>
+          <Text style={styles.actionButtonText}>Ignore</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={() => handleHazardAction(item.id, 'delete')}>
+          <Text style={styles.actionButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -182,59 +171,39 @@ export default function AdminReportsScreen() {
       ]}
       onPress={() => setFilter(filterType)}
     >
-      <Text
-        style={[
-          styles.filterButtonText,
-          filter === filterType && styles.filterButtonTextActive,
-        ]}
-      >
-        {label}
-      </Text>
+      <Text style={[styles.filterButtonText, filter === filterType && styles.filterButtonTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading hazards...</Text>
+        <Text style={styles.loadingText}>Loading hazard reports...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Hazard Management</Text>
       </View>
 
-      {/* Stats */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{hazards.length}</Text>
-          <Text style={styles.statLabel}>Total Hazards</Text>
+          <Text style={styles.statLabel}>Total</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {hazards.filter(h => h.status === 'active').length}
-          </Text>
+          <Text style={styles.statValue}>{hazards.filter(h => h.status === 'active').length}</Text>
           <Text style={styles.statLabel}>Active</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {hazards.filter(h => h.status === 'resolved').length}
-          </Text>
+          <Text style={styles.statValue}>{hazards.filter(h => h.status === 'resolved').length}</Text>
           <Text style={styles.statLabel}>Resolved</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {hazards.filter(h => h.status === 'pending').length}
-          </Text>
-          <Text style={styles.statLabel}>Pending</Text>
         </View>
       </View>
 
-      {/* Filters */}
       <View style={styles.filtersContainer}>
         {renderFilterButton('all', 'All')}
         {renderFilterButton('active', 'Active')}
@@ -242,20 +211,15 @@ export default function AdminReportsScreen() {
         {renderFilterButton('resolved', 'Resolved')}
       </View>
 
-      {/* Hazards List */}
       <FlatList
         data={filteredHazards}
         renderItem={renderHazardItem}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              {filter === 'all' ? 'No hazards found' : `No ${filter} hazards found`}
-            </Text>
+            <Text style={styles.emptyText}>{filter === 'all' ? 'No hazards found' : `No ${filter} hazards found`}</Text>
           </View>
         }
         contentContainerStyle={styles.listContainer}
@@ -299,7 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     padding: spacing.sm,
     marginRight: spacing.xs,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -326,7 +290,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingVertical: spacing.sm,
     marginRight: spacing.xs,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   filterButtonActive: {
@@ -347,20 +311,20 @@ const styles = StyleSheet.create({
   },
   hazardItem: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 18,
     padding: spacing.md,
     marginBottom: spacing.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   hazardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   hazardType: {
     ...typography.text.lg,
@@ -370,22 +334,33 @@ const styles = StyleSheet.create({
   statusBadge: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   statusText: {
     ...typography.text.xs,
     color: colors.text,
     fontWeight: typography.fontWeight.bold,
   },
-  hazardLocation: {
+  hazardImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    marginBottom: spacing.sm,
+  },
+  hazardDescription: {
     ...typography.text.md,
-    color: colors.textMuted,
+    color: colors.text,
     marginBottom: spacing.xs,
+  },
+  hazardLocation: {
+    ...typography.text.sm,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
   },
   hazardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   hazardConfidence: {
     ...typography.text.sm,
@@ -397,26 +372,25 @@ const styles = StyleSheet.create({
   },
   hazardActions: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
   actionButton: {
     flex: 1,
     paddingVertical: spacing.sm,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
+    marginRight: spacing.xs,
   },
   resolveButton: {
     backgroundColor: colors.success,
   },
-  resolveButtonText: {
-    ...typography.text.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.bold,
+  ignoreButton: {
+    backgroundColor: colors.warning,
   },
   deleteButton: {
     backgroundColor: colors.danger,
   },
-  deleteButtonText: {
+  actionButtonText: {
     ...typography.text.sm,
     color: colors.text,
     fontWeight: typography.fontWeight.bold,

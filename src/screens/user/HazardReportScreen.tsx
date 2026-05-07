@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,34 +9,37 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
-  Modal,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { imageService } from '../../services/imageService';
 import { useLocation } from '../../hooks/useLocation';
 import { apiService } from '../../services/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config/api';
+
+const hazardOptions = [
+  { label: 'Pothole', value: 'POTHOLE', type: 2 },
+  { label: 'Speed Breaker', value: 'SPEED_BREAKER', type: 1 },
+  { label: 'Other', value: 'OTHER', type: 0 },
+];
 
 export default function HazardReportScreen() {
   const navigation = useNavigation();
   const { location } = useLocation();
-  
+
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [description, setDescription] = useState('Pothole detected');
+  const [description, setDescription] = useState('Road surface hazard detected');
+  const [hazardType, setHazardType] = useState<{ label: string; value: string; type: number }>(hazardOptions[0]);
+  const [confidence, setConfidence] = useState(0.88);
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [showImageOptions, setShowImageOptions] = useState(false);
 
   const handleTakePhoto = async () => {
-    setShowImageOptions(false);
     const result = await imageService.pickImageFromCamera();
     if (result.success && result.uri) {
       setImageUri(result.uri);
@@ -46,7 +49,6 @@ export default function HazardReportScreen() {
   };
 
   const handlePickFromGallery = async () => {
-    setShowImageOptions(false);
     const result = await imageService.pickImageFromGallery();
     if (result.success && result.uri) {
       setImageUri(result.uri);
@@ -55,56 +57,59 @@ export default function HazardReportScreen() {
     }
   };
 
+  const prepareUpload = async (uri: string) => {
+    const compressed = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1280 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const fileName = compressed.uri.split('/').pop() || 'hazard.jpg';
+    const formData = new FormData();
+
+    formData.append('image', {
+      uri: compressed.uri,
+      name: fileName,
+      type: 'image/jpeg',
+    } as any);
+
+    formData.append('hazard_type', hazardType.type.toString());
+    formData.append('confidence', confidence.toString());
+    formData.append('latitude', String(location?.latitude ?? 0));
+    formData.append('longitude', String(location?.longitude ?? 0));
+    formData.append('speed', String(location?.speed != null ? Math.round(location.speed * 3.6) : 0));
+    formData.append('timestamp', new Date().toISOString());
+    formData.append('description', description);
+
+    return formData;
+  };
+
   const handleSubmit = async () => {
     if (!imageUri) {
-      Alert.alert('Error', 'Please select an image');
+      Alert.alert('Select Photo', 'Please take or choose a hazard photo before submitting.');
       return;
     }
 
-    if (!location) {
-      Alert.alert('Error', 'Unable to get your location. Please enable location services.');
+    const latitude = location?.latitude;
+    const longitude = location?.longitude;
+    if (!latitude || !longitude) {
+      Alert.alert('Location Required', 'Enable location services to report a hazard.');
       return;
     }
 
     setLoading(true);
     try {
-      // Convert image to base64
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: 'base64',
-      });
-
-      const payload = {
-        type: description.toLowerCase().includes('pothole') ? 'POTHOLE' : 'SPEEDBUMP',
-        latitude: location.latitude,
-        longitude: location.longitude,
-        timestamp: new Date().toISOString(),
-        description,
-        image: base64,
-      };
-
-      const response = await apiService.reportHazard(payload);
-
+      const formData = await prepareUpload(imageUri);
+      const response = await apiService.reportHazard(formData);
       if (response.success) {
-        setSubmitted(true);
-        setTimeout(() => {
-          setImageUri(null);
-          setDescription('Pothole detected');
-          setSubmitted(false);
-          Alert.alert(
-            'Success',
-            'Your hazard report has been submitted to the admin team!',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-        }, 2000);
+        Alert.alert('Report Sent', 'Hazard uploaded successfully and shared with the network.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
       } else {
-        throw new Error(response.error || 'Failed to submit report');
+        throw new Error(response.error || 'Upload failed');
       }
     } catch (error: any) {
-      console.error('Upload error:', error);
-      const message = error.response?.data?.detail ||
-                     error.message ||
-                     'Failed to submit report. Please try again.';
-      Alert.alert('Error', message);
+      console.error('Hazard upload failed:', error);
+      Alert.alert('Upload Error', error.message || 'Failed to submit report');
     } finally {
       setLoading(false);
     }
@@ -112,96 +117,60 @@ export default function HazardReportScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backButton}>← Back</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Report Hazard</Text>
-          <View style={{ width: 40 }} />
+          <Text style={styles.headerTitle}>Report Hazard</Text>
+          <View style={{ width: 32 }} />
         </View>
 
-        {/* Image Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📸 Hazard Image</Text>
-          
+          <Text style={styles.sectionTitle}>Hazard Photo</Text>
           {imageUri ? (
-            <>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-              <TouchableOpacity
-                style={styles.changeImageButton}
-                onPress={() => setShowImageOptions(true)}
-              >
-                <Text style={styles.changeImageButtonText}>Try different image</Text>
-              </TouchableOpacity>
-            </>
+            <Image source={{ uri: imageUri }} style={styles.imagePreview} />
           ) : (
-            <TouchableOpacity
-              style={styles.imagePlaceholder}
-              onPress={() => setShowImageOptions(true)}
-            >
+            <View style={styles.imagePlaceholder}>
               <Text style={styles.imagePlaceholderText}>📷</Text>
-              <Text style={styles.imagePlaceholderLabel}>Select or Take Photo</Text>
+              <Text style={styles.imagePlaceholderLabel}>Add hazard photo</Text>
+            </View>
+          )}
+          <View style={styles.photoActions}>
+            <TouchableOpacity style={styles.photoButton} onPress={handleTakePhoto}>
+              <Text style={styles.photoButtonText}>Take Photo</Text>
             </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Image Options Modal */}
-        <Modal visible={showImageOptions} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Choose Image Source</Text>
-              
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={handleTakePhoto}
-              >
-                <Text style={styles.modalOptionIcon}>📷</Text>
-                <Text style={styles.modalOptionText}>Take Photo</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={handlePickFromGallery}
-              >
-                <Text style={styles.modalOptionIcon}>🖼️</Text>
-                <Text style={styles.modalOptionText}>Choose from Gallery</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalOption, styles.cancelOption]}
-                onPress={() => setShowImageOptions(false)}
-              >
-                <Text style={styles.cancelOptionText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.photoButton} onPress={handlePickFromGallery}>
+              <Text style={styles.photoButtonText}>Gallery</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-
-        {/* Location Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📍 Location</Text>
-          {location ? (
-            <View style={styles.locationBox}>
-              <Text style={styles.locationText}>
-                Latitude: {location.latitude.toFixed(6)}
-              </Text>
-              <Text style={styles.locationText}>
-                Longitude: {location.longitude.toFixed(6)}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.warningText}>Getting your location...</Text>
-          )}
         </View>
 
-        {/* Description Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📝 Description</Text>
+          <Text style={styles.sectionTitle}>Hazard Type</Text>
+          <View style={styles.typeSwitchContainer}>
+            {hazardOptions.map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.typeOption,
+                  hazardType.value === option.value && styles.typeOptionActive,
+                ]}
+                onPress={() => setHazardType(option)}
+              >
+                <Text style={[styles.typeOptionText, hazardType.value === option.value && styles.typeOptionTextActive]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Details</Text>
           <TextInput
             style={styles.descriptionInput}
-            placeholder="Describe the hazard..."
+            placeholder="Describe the hazard or road condition"
             placeholderTextColor={colors.textMuted}
             value={description}
             onChangeText={setDescription}
@@ -210,31 +179,30 @@ export default function HazardReportScreen() {
           />
         </View>
 
-        {/* Success Message */}
-        {submitted && (
-          <View style={styles.successBox}>
-            <Text style={styles.successIcon}>✅</Text>
-            <Text style={styles.successText}>Report submitted successfully!</Text>
-            <Text style={styles.successSubtext}>Admin will review it shortly</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Live Location</Text>
+          <View style={styles.locationRow}>
+            <Text style={styles.locationText}>Lat: {location?.latitude?.toFixed(6) ?? 'n/a'}</Text>
+            <Text style={styles.locationText}>Lon: {location?.longitude?.toFixed(6) ?? 'n/a'}</Text>
           </View>
-        )}
+          <Text style={styles.locationSubtext}>Speed: {location?.speed != null ? Math.round(location.speed * 3.6) : 0} km/h</Text>
+        </View>
 
-        {/* Submit Button */}
         <TouchableOpacity
-        style={[styles.submitButton, (!imageUri || loading) ? styles.submitButtonDisabled : undefined]}
+          style={[styles.submitButton, loading ? styles.submitDisabled : null]}
           onPress={handleSubmit}
-          disabled={loading || !imageUri}
+          disabled={loading}
         >
           <LinearGradient
             colors={[colors.secondary, colors.accent]}
-            style={styles.submitButtonGradient}
+            style={styles.submitGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.submitButtonText}>Submit Report</Text>
+              <Text style={styles.submitText}>Upload Hazard</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
@@ -248,179 +216,149 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.primary,
   },
-  scrollContent: {
+  content: {
     padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  header: {
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.xl,
   },
   backButton: {
-    fontSize: 16,
-    color: colors.accent,
-    fontWeight: '600',
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  title: {
-    ...typography.text.lg,
-    fontWeight: typography.fontWeight.bold,
+  backText: {
     color: colors.text,
+    fontSize: 18,
+  },
+  headerTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '800',
   },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
-    ...typography.text.md,
-    fontWeight: typography.fontWeight.semibold,
     color: colors.text,
-    marginBottom: spacing.md,
+    fontSize: 14,
+    marginBottom: spacing.sm,
+    fontWeight: '700',
   },
   imagePreview: {
     width: '100%',
-    height: 300,
-    borderRadius: 12,
-    marginBottom: spacing.md,
+    height: 260,
+    borderRadius: 20,
     backgroundColor: colors.surface,
+    marginBottom: spacing.md,
   },
   imagePlaceholder: {
     width: '100%',
-    height: 250,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderStyle: 'dashed',
-    borderWidth: 2,
+    height: 220,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: colors.surfaceLight,
-    justifyContent: 'center',
+    backgroundColor: colors.surface,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
   },
   imagePlaceholderText: {
-    fontSize: 48,
-    marginBottom: spacing.md,
+    color: colors.textMuted,
+    fontSize: 40,
   },
   imagePlaceholderLabel: {
+    marginTop: spacing.sm,
     color: colors.textMuted,
-    ...typography.text.sm,
+    fontSize: 14,
   },
-  changeImageButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  changeImageButtonText: {
-    color: colors.accent,
-    fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  modalTitle: {
-    ...typography.text.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.lg,
-    textAlign: 'center',
-  },
-  modalOption: {
+  photoActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+    justifyContent: 'space-between',
   },
-  modalOptionIcon: {
-    fontSize: 24,
-    marginRight: spacing.lg,
-  },
-  modalOptionText: {
-    color: colors.text,
-    ...typography.text.md,
-    fontWeight: '600',
-  },
-  cancelOption: {
-    backgroundColor: colors.danger,
-  },
-  cancelOptionText: {
-    color: colors.text,
-    ...typography.text.md,
-    fontWeight: '600',
+  photoButton: {
     flex: 1,
-    textAlign: 'center',
-  },
-  locationBox: {
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  photoButtonText: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  typeSwitchContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  typeOption: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.surfaceLight,
+    marginBottom: spacing.sm,
+    minWidth: '30%',
+    alignItems: 'center',
+  },
+  typeOptionActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  typeOptionText: {
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  typeOptionTextActive: {
+    color: colors.text,
+  },
+  descriptionInput: {
+    minHeight: 110,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.surfaceLight,
     padding: spacing.md,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    textAlignVertical: 'top',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   locationText: {
     color: colors.text,
-    ...typography.text.sm,
-    marginBottom: spacing.sm,
+    fontSize: 13,
   },
-  warningText: {
-    color: colors.warning,
-    ...typography.text.sm,
-    fontStyle: 'italic',
-  },
-  descriptionInput: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: spacing.md,
-    color: colors.text,
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: colors.surfaceLight,
-  },
-  successBox: {
-    backgroundColor: `${colors.success}20`,
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
-    alignItems: 'center',
-  },
-  successIcon: {
-    fontSize: 32,
-    marginBottom: spacing.sm,
-  },
-  successText: {
-    color: colors.success,
-    ...typography.text.md,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  successSubtext: {
-    color: colors.success,
-    ...typography.text.sm,
-    opacity: 0.8,
+  locationSubtext: {
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   submitButton: {
+    borderRadius: 22,
     overflow: 'hidden',
-    borderRadius: 12,
+    marginTop: spacing.lg,
   },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonGradient: {
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xl,
+  submitGradient: {
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 22,
   },
-  submitButtonText: {
+  submitText: {
     color: '#fff',
-    ...typography.text.md,
-    fontWeight: typography.fontWeight.bold,
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  submitDisabled: {
+    opacity: 0.7,
   },
 });

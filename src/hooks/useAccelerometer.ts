@@ -43,8 +43,8 @@ export const useAccelerometer = () => {
     try {
       setError(null);
 
-      // Set update interval to 100ms for real-time monitoring
-      Accelerometer.setUpdateInterval(100);
+      // Set update interval to 120ms to balance responsiveness and battery use
+      Accelerometer.setUpdateInterval(120);
 
       const subscription = Accelerometer.addListener((data: AccelerometerMeasurement) => {
         setAccelerometerData({
