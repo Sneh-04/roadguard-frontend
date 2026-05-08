@@ -353,6 +353,10 @@ class ApiService {
     return this.makeRequest('GET', '/admin/stats');
   }
 
+  async getAdminReports(): Promise<ApiResponse<any[]>> {
+    return this.makeRequest('GET', '/admin/reports');
+  }
+
   async deleteHazard(hazardId: string): Promise<ApiResponse<any>> {
     return this.makeRequest('DELETE', `/events/${hazardId}`);
   }

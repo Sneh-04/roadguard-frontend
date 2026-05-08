@@ -36,33 +36,101 @@ export default function AdminReportsScreen() {
 
   useEffect(() => {
     loadHazards();
-  }, []);
+  }, [loadHazards]);
+
+  // WebSocket connection for real-time updates
+  useEffect(() => {
+    const wsUrl = `wss://roadguard-backend-ympg.onrender.com/ws/live`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('[AdminReports] WebSocket connected');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'hazard_update' || message.type === 'report_created' || message.type === 'hazard_created') {
+          console.log('[AdminReports] Update received, refreshing data:', message.type);
+          loadHazards();
+        }
+      } catch (error) {
+        console.error('[AdminReports] Failed to parse WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[AdminReports] WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('[AdminReports] WebSocket disconnected');
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [loadHazards]);
 
   const loadHazards = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getHazards();
-      const hazardsData = Array.isArray(response.data)
-        ? response.data
-        : Array.isArray((response.data as any)?.events)
-        ? (response.data as any).events
-        : Array.isArray((response.data as any)?.reports)
-        ? (response.data as any).reports
-        : [];
+      
+      // Fetch both sensor detections and user reports
+      const [eventsResponse, reportsResponse] = await Promise.allSettled([
+        apiService.getHazards(),
+        apiService.getAdminReports()
+      ]);
 
-      if (response.success && Array.isArray(hazardsData)) {
-        const normalizedHazards = hazardsData.map((hazard: any) => ({
-          ...hazard,
-          image_url: hazard.image_url && !hazard.image_url.startsWith('http')
-            ? `${API_BASE_URL}${hazard.image_url}`
-            : hazard.image_url,
-          created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
-          status: hazard.status || 'active',
-        }));
-        setHazards(normalizedHazards);
-      } else {
-        Alert.alert('Error', 'Failed to load hazard reports');
+      let allHazards: Hazard[] = [];
+
+      // Process sensor detections
+      if (eventsResponse.status === 'fulfilled' && eventsResponse.value.success) {
+        const eventsData = Array.isArray(eventsResponse.value.data)
+          ? eventsResponse.value.data
+          : Array.isArray((eventsResponse.value.data as any)?.events)
+          ? (eventsResponse.value.data as any).events
+          : [];
+        allHazards = [...allHazards, ...eventsData];
       }
+
+      // Process user reports
+      if (reportsResponse.status === 'fulfilled' && reportsResponse.value.success) {
+        const reportsData = Array.isArray(reportsResponse.value.data)
+          ? reportsResponse.value.data
+          : Array.isArray((reportsResponse.value.data as any)?.reports)
+          ? (reportsResponse.value.data as any).reports
+          : [];
+
+        // Normalize user reports to match hazard format
+        const normalizedReports = reportsData.map((report: any) => ({
+          id: report.id || `report_${report.hazard_event_id || Date.now()}`,
+          hazard_type: report.hazard?.hazard_type || report.hazard_type || 0,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          confidence: report.hazard?.confidence || report.confidence || 0.5,
+          created_at: report.created_at,
+          status: report.status || 'active',
+          image_url: report.hazard?.image_url || null,
+          description: report.description,
+          user_id: report.user_id,
+          is_user_report: true, // Flag to identify user reports
+        }));
+
+        allHazards = [...allHazards, ...normalizedReports];
+      }
+
+      // Normalize image URLs for all hazards
+      const normalizedHazards = allHazards.map((hazard: any) => ({
+        ...hazard,
+        image_url: hazard.image_url && !hazard.image_url.startsWith('http')
+          ? `${API_BASE_URL}${hazard.image_url}`
+          : hazard.image_url,
+        created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
+        status: hazard.status || 'active',
+      }));
+
+      setHazards(normalizedHazards);
     } catch (error) {
       console.error('Failed to load hazards:', error);
       Alert.alert('Error', 'Failed to load hazard reports');
