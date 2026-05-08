@@ -17,7 +17,7 @@ class RealtimeService {
   private readonly wsUrl: string;
 
   constructor() {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.0.2.2:8000';
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-backend-ympg.onrender.com';
     this.wsUrl = (process.env.EXPO_PUBLIC_WS_URL || backendUrl.replace(/^http/, 'ws')).replace(/\/$/, '');
   }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocation } from './useLocation';
-import { apiService } from '../services/api';
+import { apiService, API_BASE_URL } from '../services/api';
 import { notificationService } from '../services/notificationService';
 import { realtimeService } from '../services/realtimeService';
 
@@ -58,7 +58,9 @@ export const useHazards = () => {
         longitude: hazard.longitude,
         confidence: hazard.confidence ?? 0,
         timestamp: hazard.timestamp || hazard.created_at || new Date().toISOString(),
-        image_url: hazard.image_url || hazard.image || hazard.photo_url,
+        image_url: hazard.image_url
+          ? `${API_BASE_URL}${hazard.image_url}`
+          : undefined,
         status: hazard.status || 'active',
         description: hazard.description || hazard.type || '',
       };

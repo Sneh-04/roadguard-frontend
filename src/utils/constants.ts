@@ -1,5 +1,5 @@
 export const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.0.2.2:8000';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://roadguard-backend-ympg.onrender.com';
 
 export const OPENWEATHER_API_KEY =
   process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY || '';
@@ -33,7 +33,7 @@ export const MAP_DARK_STYLE = [
 ];
 
 // Sensor hyperparameters (match backend config)
-export const SPIKE_THRESHOLD_K = 2.5;
+export const SPIKE_THRESHOLD_K = 4.0;
 export const WINDOW_SIZE = 10;
 export const SEGMENT_LENGTH = 100;
 export const SAMPLING_FREQ = 50;   // Hz

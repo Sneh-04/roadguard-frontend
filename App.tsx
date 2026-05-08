@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider as PaperProvider, MD3DarkTheme } from 'react-native-paper';
+import { LogBox } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 const theme = {
   ...MD3DarkTheme,
@@ -17,12 +19,27 @@ const theme = {
 };
 
 export default function App() {
+  useEffect(() => {
+    LogBox.ignoreAllLogs(true);
+
+    const globalHandler = (error: Error, isFatal?: boolean) => {
+      console.error('Global error caught:', error, { isFatal });
+      // Do not rethrow so Expo red-box is suppressed in Expo Go.
+    };
+
+    if ((global as any).ErrorUtils?.setGlobalHandler) {
+      (global as any).ErrorUtils.setGlobalHandler(globalHandler);
+    }
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
-          <StatusBar style="light" backgroundColor="#0F172A" />
-          <AppNavigator />
+          <ErrorBoundary>
+            <StatusBar style="light" backgroundColor="#0F172A" />
+            <AppNavigator />
+          </ErrorBoundary>
         </PaperProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

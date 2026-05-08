@@ -3,7 +3,6 @@ import { Platform } from 'react-native';
 import { Accelerometer, Gyroscope, AccelerometerMeasurement, GyroscopeMeasurement } from 'expo-sensors';
 import { apiService } from '../services/api';
 import { useLocation } from './useLocation';
-import { HAZARD_LABELS } from '../utils/constants';
 
 export type HazardClassification = 'POTHOLE' | 'SPEED_BREAKER' | 'UNKNOWN' | 'NONE';
 
@@ -22,41 +21,25 @@ export const useRoadHazardDetection = () => {
   const motionState = useRef({
     latestAccel: { x: 0, y: 0, z: 0 },
     latestGyro: { x: 0, y: 0, z: 0 },
-    lowPassAccel: 1,
-    lowPassGyro: 1,
-    deltaBuffer: [] as number[],
+    lastMagnitude: 0,
     lastDetectionTime: 0,
     cooldown: false,
     pending: false,
+    gravity: { x: 0, y: 0, z: 0 },
   });
 
-  const SPEED_GATE_KMH = 8;
-  const LOW_PASS_ALPHA = 0.12;
-  const SMOOTHING_WINDOW = 8;
-  const COOLDOWN_MS = 5000;
+  const SPEED_GATE_KMH = 10;
+  const COOLDOWN_MS = 2500;
   const MAX_CONFIDENCE = 0.97;
 
-  const calculateMagnitude = (x: number, y: number, z: number) => Math.sqrt(x * x + y * y + z * z);
-
-  const classifyHazard = (delta: number, rotation: number) => {
-    if (delta >= 3.2 && rotation > 0.12) return 'POTHOLE';
-    if (delta >= 2.0 && delta < 3.2 && rotation > 0.08) return 'SPEED_BREAKER';
-    return 'NONE';
-  };
-
-  const buildConfidence = (delta: number) => {
-    const normalized = Math.min(1, Math.max(0, (delta - 1.8) / 2.5));
-    return Math.min(MAX_CONFIDENCE, normalized + 0.15);
-  };
-
-  const sendDetection = useCallback(async (type: HazardClassification, delta: number) => {
+  const sendDetection = useCallback(async (type: HazardClassification, magnitude: number, confidence: number) => {
     if (!location) return;
     const payload = {
       type,
       hazard_type: type === 'POTHOLE' ? 2 : type === 'SPEED_BREAKER' ? 1 : 0,
       latitude: location.latitude,
       longitude: location.longitude,
-      confidence: buildConfidence(delta),
+      confidence,
       speed: speed ?? 0,
       timestamp: new Date().toISOString(),
     };
@@ -75,51 +58,72 @@ export const useRoadHazardDetection = () => {
   const processMotion = useCallback(() => {
     const now = Date.now();
     const motion = motionState.current;
-    const { latestAccel, latestGyro } = motion;
-    const accelMagnitude = calculateMagnitude(latestAccel.x, latestAccel.y, latestAccel.z);
-    const gyroMagnitude = calculateMagnitude(latestGyro.x, latestGyro.y, latestGyro.z);
+    const { latestAccel } = motion;
+    const { x, y, z } = latestAccel;
 
-    motion.lowPassAccel = LOW_PASS_ALPHA * accelMagnitude + (1 - LOW_PASS_ALPHA) * motion.lowPassAccel;
-    motion.lowPassGyro = LOW_PASS_ALPHA * gyroMagnitude + (1 - LOW_PASS_ALPHA) * motion.lowPassGyro;
+    // Low-pass filter to estimate gravity
+    const alpha = 0.8;
+    motion.gravity.x = alpha * motion.gravity.x + (1 - alpha) * x;
+    motion.gravity.y = alpha * motion.gravity.y + (1 - alpha) * y;
+    motion.gravity.z = alpha * motion.gravity.z + (1 - alpha) * z;
 
-    const accelDelta = Math.abs(accelMagnitude - motion.lowPassAccel);
-    const gyroDelta = Math.abs(gyroMagnitude - motion.lowPassGyro);
-    const combinedDelta = accelDelta + gyroDelta * 0.5;
+    // Remove gravity to get linear acceleration
+    const filteredX = x - motion.gravity.x;
+    const filteredY = y - motion.gravity.y;
+    const filteredZ = z - motion.gravity.z;
 
-    motion.deltaBuffer.push(combinedDelta);
-    if (motion.deltaBuffer.length > SMOOTHING_WINDOW) motion.deltaBuffer.shift();
+    // Calculate magnitude of linear acceleration
+    const magnitude = Math.sqrt(
+      filteredX * filteredX +
+      filteredY * filteredY +
+      filteredZ * filteredZ
+    );
 
-    const smoothDelta = motion.deltaBuffer.reduce((sum, value) => sum + value, 0) / motion.deltaBuffer.length;
     const speedKmh = speed != null ? speed * 3.6 : 0;
-    const isDriving = speedKmh >= SPEED_GATE_KMH;
-    const inCooldown = motion.cooldown && now - motion.lastDetectionTime < COOLDOWN_MS;
+    const inCooldown = now - motion.lastDetectionTime < COOLDOWN_MS;
 
-    if (!isDriving || inCooldown) {
-      if (!isDriving && status !== 'IDLE') setStatus('IDLE');
+    // ignore low-speed movement
+    if (speedKmh < 12) {
+      if (status !== 'IDLE') setStatus('IDLE');
+      setHazardType('NONE');
+      setConfidence(0);
       return;
     }
 
-    const classification = classifyHazard(smoothDelta, gyroDelta);
-    if (classification !== 'NONE' && !motion.pending) {
-      motion.pending = true;
-      motion.lastDetectionTime = now;
-      motion.cooldown = true;
-      setHazardType(classification);
-      setConfidence(buildConfidence(smoothDelta));
+    if (inCooldown) {
+      return;
+    }
+
+    // ignore tiny movement
+    if (magnitude < 1.8) {
+      if (status !== 'ACTIVE') setStatus('ACTIVE');
+      setHazardType('NONE');
+      setConfidence(0);
+      return;
+    }
+
+    // speed breaker
+    if (magnitude >= 1.8 && magnitude < 4.5) {
       setStatus('DETECTED');
+      setHazardType('SPEED_BREAKER');
+      setConfidence(0.8);
       setDetectionCount(prev => prev + 1);
       setLastDetectionAt(new Date(now).toISOString());
-      sendDetection(classification, smoothDelta);
+      motion.lastDetectionTime = now;
+      sendDetection('SPEED_BREAKER', magnitude, 0.8);
+      return;
+    }
 
-      setTimeout(() => {
-        motion.pending = false;
-        if (status !== 'ERROR') setStatus('ACTIVE');
-      }, 1200);
-
-      setTimeout(() => {
-        motion.cooldown = false;
-        if (status !== 'ERROR') setStatus('ACTIVE');
-      }, COOLDOWN_MS);
+    // pothole
+    if (magnitude >= 4.5) {
+      setStatus('DETECTED');
+      setHazardType('POTHOLE');
+      setConfidence(0.9);
+      setDetectionCount(prev => prev + 1);
+      setLastDetectionAt(new Date(now).toISOString());
+      motion.lastDetectionTime = now;
+      sendDetection('POTHOLE', magnitude, 0.9);
+      return;
     }
   }, [sendDetection, speed, status]);
 

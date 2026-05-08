@@ -10,6 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { API_BASE_URL } from '../../config/api';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { apiService } from '../../services/api';
@@ -41,10 +42,24 @@ export default function AdminReportsScreen() {
     try {
       setLoading(true);
       const response = await apiService.getHazards();
-      const hazardsData = Array.isArray(response.data) ? response.data : (response.data as any)?.reports ?? [];
+      const hazardsData = Array.isArray(response.data)
+        ? response.data
+        : Array.isArray((response.data as any)?.events)
+        ? (response.data as any).events
+        : Array.isArray((response.data as any)?.reports)
+        ? (response.data as any).reports
+        : [];
 
       if (response.success && Array.isArray(hazardsData)) {
-        setHazards(hazardsData);
+        const normalizedHazards = hazardsData.map((hazard: any) => ({
+          ...hazard,
+          image_url: hazard.image_url && !hazard.image_url.startsWith('http')
+            ? `${API_BASE_URL}${hazard.image_url}`
+            : hazard.image_url,
+          created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
+          status: hazard.status || 'active',
+        }));
+        setHazards(normalizedHazards);
       } else {
         Alert.alert('Error', 'Failed to load hazard reports');
       }

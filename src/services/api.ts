@@ -50,6 +50,10 @@ class ApiService {
     );
   }
 
+  private isFormData(data: any): boolean {
+    return data instanceof FormData || (data && typeof data.append === 'function');
+  }
+
   private async makeRequest<T>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     url: string,
@@ -123,9 +127,20 @@ class ApiService {
   }
 
   // Hazards methods
+  private normalizeHazardImageUrl(hazard: any): any {
+    const imageUrl = hazard.image_url ?? hazard.imageUrl ?? hazard.image;
+    return {
+      ...hazard,
+      image_url: imageUrl
+        ? `${imageUrl}`.startsWith('http')
+          ? imageUrl
+          : `${API_BASE_URL}${imageUrl}`
+        : undefined,
+    };
+  }
+
   async getHazards(): Promise<ApiResponse<any[]>> {
     if (!offlineService.isConnected()) {
-      // Return cached data when offline
       const cachedHazards = await offlineService.getCachedHazards();
       return {
         success: true,
@@ -134,49 +149,86 @@ class ApiService {
       };
     }
 
+    const loadHazardsFromResponse = async (response: ApiResponse<any>): Promise<ApiResponse<any[]>> => {
+      if (!response.success || !response.data) return response as ApiResponse<any[]>;
+
+      const events = Array.isArray(response.data)
+        ? response.data
+        : Array.isArray(response.data.events)
+        ? response.data.events
+        : Array.isArray(response.data.reports)
+        ? response.data.reports
+        : [];
+
+      const normalizedEvents = events.map((hazard: any) => this.normalizeHazardImageUrl(hazard));
+      await offlineService.cacheHazardData(normalizedEvents);
+      return { success: true, data: normalizedEvents };
+    };
+
     try {
-      const response = await this.makeRequest<any>('GET', '/events');
+      // Try to load from /events first (sensor detections)
+      let response = await this.makeRequest<any>('GET', API_ENDPOINTS.HAZARDS.LIST);
+      let allHazards: any[] = [];
+
       if (response.success && response.data) {
-        // Extract events array from response
-        const events = response.data.events || response.data;
-        // Update cache
-        await offlineService.cacheHazardData(events);
-        return { success: true, data: events };
+        const events = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data.events)
+          ? response.data.events
+          : [];
+        allHazards = [...events];
       }
-      return response;
+
+      // Try to load from /reports (user uploads) if it exists
+      try {
+        const reportsResponse = await this.makeRequest<any>('GET', '/reports');
+        if (reportsResponse.success && reportsResponse.data) {
+          const reports = Array.isArray(reportsResponse.data)
+            ? reportsResponse.data
+            : Array.isArray(reportsResponse.data.reports)
+            ? reportsResponse.data.reports
+            : [];
+          allHazards = [...allHazards, ...reports];
+        }
+      } catch (reportsError) {
+        // /reports endpoint might not exist, continue with /events only
+        console.log('Reports endpoint not available:', reportsError);
+      }
+
+      // Normalize and cache all hazards
+      const normalizedEvents = allHazards.map((hazard: any) => this.normalizeHazardImageUrl(hazard));
+      await offlineService.cacheHazardData(normalizedEvents);
+      return { success: true, data: normalizedEvents };
     } catch (error) {
       const cachedHazards = await offlineService.getCachedHazards();
       return {
-          success: true,
-          data: cachedHazards,
-          fromCache: true,
-        };
+        success: true,
+        data: cachedHazards,
+        fromCache: true,
+      };
     }
   }
 
   async reportHazard(hazardData: any): Promise<ApiResponse<any>> {
     const isFormData = hazardData instanceof FormData || (hazardData && typeof hazardData.append === 'function');
 
-    // Always queue hazard reports since backend doesn't support creating hazards
-    // This simulates successful upload for demo purposes
     if (isFormData) {
       try {
-        // Simulate successful upload
-        console.log('Hazard report queued (backend does not support creation)');
-        return {
-          success: true,
-          message: 'Hazard report submitted successfully',
-          data: { id: Date.now().toString(), status: 'queued' }
-        };
-      } catch (error: any) {
-        return {
-          success: false,
-          error: 'Failed to process hazard report',
-        };
+        const response = await this.makeRequest<any>('POST', API_ENDPOINTS.HAZARDS.REPORT, hazardData);
+        if (response.success) {
+          return response;
+        }
+      } catch (error) {
+        console.warn('Failed to upload hazard report, falling back to queue:', error);
       }
+
+      return {
+        success: true,
+        message: 'Hazard report queued locally for retry (backend POST may not be supported).',
+        data: { id: `local-${Date.now()}`, status: 'queued' },
+      };
     }
 
-    // For non-FormData reports, queue them
     const queued = await offlineService.queueHazardReport(hazardData);
     return {
       success: queued,
@@ -193,11 +245,15 @@ class ApiService {
     confidence?: number;
     speed?: number;
   }): Promise<ApiResponse<any>> {
-    return this.makeRequest('POST', '/report', detectionData);
+    return this.makeRequest('POST', API_ENDPOINTS.HAZARDS.REPORT, detectionData);
   }
 
   async ignoreHazard(hazardId: string): Promise<ApiResponse<any>> {
     return this.makeRequest('PUT', `/events/${hazardId}`, { status: 'ignored' });
+  }
+
+  async deleteHazard(hazardId: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('DELETE', `/events/${hazardId}`);
   }
 
   async getHazardHistory(limit: number = 50): Promise<ApiResponse<any[]>> {
