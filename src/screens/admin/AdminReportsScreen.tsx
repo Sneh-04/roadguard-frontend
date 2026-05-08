@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -38,7 +38,7 @@ export default function AdminReportsScreen() {
     loadHazards();
   }, []);
 
-  const loadHazards = async () => {
+  const loadHazards = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiService.getHazards();
@@ -69,7 +69,7 @@ export default function AdminReportsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
