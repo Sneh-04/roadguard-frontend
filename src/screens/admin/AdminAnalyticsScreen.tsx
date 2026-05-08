@@ -43,104 +43,28 @@ export default function AdminAnalyticsScreen() {
       const response = await apiService.getSystemStats();
 
       if (response.success && response.data) {
-        // Transform the data to include more analytics
-        const data = response.data;
-        const enhancedData: AnalyticsData = {
-          ...data,
-          hazards_by_type: {
-            'Pothole': Math.floor(data.total_hazards * 0.4),
-            'Speed Breaker': Math.floor(data.total_hazards * 0.3),
-            'Broken Road': Math.floor(data.total_hazards * 0.2),
-            'Normal': Math.floor(data.total_hazards * 0.1),
-          },
-          hazards_by_day: [
-            { date: '2024-01-01', count: 12 },
-            { date: '2024-01-02', count: 8 },
-            { date: '2024-01-03', count: 15 },
-            { date: '2024-01-04', count: 6 },
-            { date: '2024-01-05', count: 10 },
-          ],
-          user_registrations: [
-            { date: '2024-01-01', count: 5 },
-            { date: '2024-01-02', count: 3 },
-            { date: '2024-01-03', count: 8 },
-            { date: '2024-01-04', count: 2 },
-            { date: '2024-01-05', count: 4 },
-          ],
-          average_confidence: 0.85,
-          response_time: 2.3,
+        const data = response.data as any;
+        const normalizedData: AnalyticsData = {
+          total_users: data.total_users ?? data.users_count ?? 0,
+          active_users: data.active_users ?? data.active_users_count ?? 0,
+          total_hazards: data.total_hazards ?? data.hazards_count ?? 0,
+          active_hazards: data.active_hazards ?? data.active_hazards_count ?? 0,
+          total_reports: data.total_reports ?? data.reports_count ?? 0,
+          system_health: data.system_health ?? data.status ?? 'unknown',
+          uptime: data.uptime ?? data.uptime_string ?? 'Unknown',
+          hazards_by_type: data.hazards_by_type ?? {},
+          hazards_by_day: data.hazards_by_day ?? [],
+          user_registrations: data.user_registrations ?? [],
+          average_confidence: data.average_confidence ?? data.avg_confidence ?? 0,
+          response_time: data.response_time ?? data.avg_response_time ?? 0,
         };
-        setAnalytics(enhancedData);
+        setAnalytics(normalizedData);
       } else {
-        // Show mock analytics data for demo
-        const mockData: AnalyticsData = {
-          total_users: 150,
-          active_users: 89,
-          total_hazards: 234,
-          active_hazards: 156,
-          total_reports: 89,
-          system_health: 'healthy',
-          uptime: '5 days',
-          hazards_by_type: {
-            'Pothole': 94,
-            'Speed Breaker': 70,
-            'Broken Road': 47,
-            'Normal': 23,
-          },
-          hazards_by_day: [
-            { date: '2024-01-01', count: 12 },
-            { date: '2024-01-02', count: 8 },
-            { date: '2024-01-03', count: 15 },
-            { date: '2024-01-04', count: 6 },
-            { date: '2024-01-05', count: 10 },
-          ],
-          user_registrations: [
-            { date: '2024-01-01', count: 5 },
-            { date: '2024-01-02', count: 3 },
-            { date: '2024-01-03', count: 8 },
-            { date: '2024-01-04', count: 2 },
-            { date: '2024-01-05', count: 4 },
-          ],
-          average_confidence: 0.85,
-          response_time: 2.3,
-        };
-        setAnalytics(mockData);
+        throw new Error(response.error || 'No analytics data available');
       }
     } catch (error) {
       console.error('Failed to load analytics:', error);
-      // Show mock analytics data for demo
-      const mockData: AnalyticsData = {
-        total_users: 150,
-        active_users: 89,
-        total_hazards: 234,
-        active_hazards: 156,
-        total_reports: 89,
-        system_health: 'healthy',
-        uptime: '5 days',
-        hazards_by_type: {
-          'Pothole': 94,
-          'Speed Breaker': 70,
-          'Broken Road': 47,
-          'Normal': 23,
-        },
-        hazards_by_day: [
-          { date: '2024-01-01', count: 12 },
-          { date: '2024-01-02', count: 8 },
-          { date: '2024-01-03', count: 15 },
-          { date: '2024-01-04', count: 6 },
-          { date: '2024-01-05', count: 10 },
-        ],
-        user_registrations: [
-          { date: '2024-01-01', count: 5 },
-          { date: '2024-01-02', count: 3 },
-          { date: '2024-01-03', count: 8 },
-          { date: '2024-01-04', count: 2 },
-          { date: '2024-01-05', count: 4 },
-        ],
-        average_confidence: 0.85,
-        response_time: 2.3,
-      };
-      setAnalytics(mockData);
+      setAnalytics(null);
     } finally {
       setLoading(false);
     }
