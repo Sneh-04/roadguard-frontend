@@ -14,7 +14,7 @@ export const API_ENDPOINTS = {
   },
   HAZARDS: {
     LIST: '/events',
-    REPORT: '/report',
+    REPORT: '/hazard-reports',
     HISTORY: '/events',
   },
   PREDICT: '/predict',

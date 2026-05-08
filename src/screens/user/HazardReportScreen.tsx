@@ -57,7 +57,7 @@ export default function HazardReportScreen() {
     }
   };
 
-  const prepareUpload = async (uri: string) => {
+  const prepareUpload = async (uri: string, latitude: number, longitude: number, speed?: number) => {
     const compressed = await ImageManipulator.manipulateAsync(
       uri,
       [{ resize: { width: 1280 } }],
@@ -72,11 +72,11 @@ export default function HazardReportScreen() {
       type: 'image/jpeg',
     } as any);
 
+    formData.append('latitude', String(latitude));
+    formData.append('longitude', String(longitude));
     formData.append('hazard_type', hazardType.type.toString());
     formData.append('confidence', confidence.toString());
-    formData.append('latitude', String(location?.latitude ?? 0));
-    formData.append('longitude', String(location?.longitude ?? 0));
-    formData.append('speed', String(location?.speed != null ? Math.round(location.speed * 3.6) : 0));
+    formData.append('speed', String(speed != null ? Math.round(speed * 3.6) : 0));
     formData.append('timestamp', new Date().toISOString());
     formData.append('description', description);
 
@@ -98,7 +98,7 @@ export default function HazardReportScreen() {
 
     setLoading(true);
     try {
-      const formData = await prepareUpload(imageUri);
+      const formData = await prepareUpload(imageUri, latitude, longitude, location?.speed);
       const response = await apiService.reportHazard(formData);
       if (response.success) {
         Alert.alert('Report Sent', 'Hazard uploaded successfully and shared with the network.', [
