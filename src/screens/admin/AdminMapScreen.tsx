@@ -11,7 +11,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useLocation } from '../../hooks/useLocation';
 import { useHazards } from '../../hooks/useHazards';
-import { apiService } from '../../services/api';
+import { apiService, API_BASE_URL } from '../../services/api';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { HAZARD_COLORS, HAZARD_LABELS, HAZARD_EMOJIS, MAP_DARK_STYLE } from '../../utils/constants';
@@ -43,10 +43,151 @@ const initialRegion: Region = {
 
 export default function AdminMapScreen() {
   const { location } = useLocation();
-  const { hazards, loading, fetchHazards } = useHazards();
+  const [hazards, setHazards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<Region>(initialRegion);
   const [selectedHazardId, setSelectedHazardId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const loadHazards = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch both sensor detections and user reports
+      const [eventsResponse, reportsResponse] = await Promise.allSettled([
+        apiService.getHazards(),
+        apiService.getAdminReports()
+      ]);
+
+      let allHazards: any[] = [];
+
+      // Process sensor detections
+      if (eventsResponse.status === 'fulfilled' && eventsResponse.value.success) {
+        const eventsData = Array.isArray(eventsResponse.value.data)
+          ? eventsResponse.value.data
+          : Array.isArray((eventsResponse.value.data as any)?.events)
+          ? (eventsResponse.value.data as any).events
+          : [];
+        allHazards = [...allHazards, ...eventsData];
+        console.log(`[AdminMap] Loaded ${eventsData.length} sensor-detected hazards`);
+      } else {
+        console.warn('[AdminMap] Failed to load sensor detections:', eventsResponse.status === 'rejected' ? eventsResponse.reason : eventsResponse.value.error);
+      }
+
+      // Process user reports
+      if (reportsResponse.status === 'fulfilled' && reportsResponse.value.success) {
+        const reportsData = Array.isArray(reportsResponse.value.data)
+          ? reportsResponse.value.data
+          : Array.isArray((reportsResponse.value.data as any)?.reports)
+          ? (reportsResponse.value.data as any).reports
+          : [];
+
+        console.log(`[AdminMap] Loaded ${reportsData.length} user reports`);
+        console.log('[AdminMap] Sample report data:', reportsData[0]); // Debug: check data structure
+
+        // Normalize user reports to match hazard format
+        const normalizedReports = reportsData.map((report: any) => ({
+          id: report.id || `report_${report.hazard_event_id || Date.now()}`,
+          hazard_type: report.hazard?.hazard_type || report.hazard_type || 0,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          confidence: report.hazard?.confidence || report.confidence || 0.5,
+          created_at: report.created_at,
+          timestamp: report.created_at,
+          status: report.status || 'active',
+          image_url: report.hazard?.image_url || report.image_url || null,
+          description: report.description,
+          user_id: report.user_id,
+          is_user_report: true, // Flag to identify user reports
+        }));
+
+        allHazards = [...allHazards, ...normalizedReports];
+      } else {
+        const error = reportsResponse.status === 'rejected' ? reportsResponse.reason : reportsResponse.value?.error;
+        console.warn('[AdminMap] Failed to load user reports (may require admin authentication):', error);
+        
+        // Show a helpful message if it's an auth issue
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          console.log('[AdminMap] Admin authentication required for user reports. Only showing sensor-detected hazards.');
+        }
+      }
+
+      // Normalize image URLs for all hazards
+      const normalizedHazards = allHazards.map((hazard: any) => {
+        const originalUrl = hazard.image_url;
+        const normalizedUrl = hazard.image_url && !hazard.image_url.startsWith('http')
+          ? hazard.image_url.startsWith('/')
+            ? `${API_BASE_URL}${hazard.image_url}`
+            : `${API_BASE_URL}/${hazard.image_url}`
+          : hazard.image_url;
+        
+        if (originalUrl) {
+          console.log('[AdminMap] Image URL normalization:', { original: originalUrl, normalized: normalizedUrl });
+        }
+        
+        return {
+          ...hazard,
+          image_url: normalizedUrl,
+          created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
+          timestamp: hazard.timestamp || hazard.created_at || new Date().toISOString(),
+          status: hazard.status || 'active',
+        };
+      });
+
+      console.log(`[AdminMap] Total hazards loaded: ${normalizedHazards.length}`);
+      setHazards(normalizedHazards);
+    } catch (error) {
+      console.error('[AdminMap] Failed to load hazards:', error);
+      Alert.alert('Error', 'Failed to load hazard reports. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHazards();
+  }, [loadHazards]);
+
+  // WebSocket connection for real-time updates
+  useEffect(() => {
+    const wsUrl = `wss://roadguard-backend-ympg.onrender.com/ws/live`;
+    console.log('[AdminMap] Connecting to WebSocket:', wsUrl);
+    
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('[AdminMap] WebSocket connected successfully');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('[AdminMap] WebSocket message received:', message.type);
+        
+        if (message.type === 'hazard_update' || message.type === 'report_created' || message.type === 'hazard_created') {
+          console.log('[AdminMap] Refreshing data due to:', message.type);
+          loadHazards();
+        }
+      } catch (error) {
+        console.error('[AdminMap] Failed to parse WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[AdminMap] WebSocket error:', error);
+      // Don't show alert for WebSocket errors as they're common in development
+    };
+
+    ws.onclose = (event) => {
+      console.log('[AdminMap] WebSocket disconnected:', event.code, event.reason);
+      // Could implement reconnection logic here if needed
+    };
+
+    return () => {
+      console.log('[AdminMap] Closing WebSocket connection');
+      ws.close();
+    };
+  }, [loadHazards]);
 
   useEffect(() => {
     if (location) {
@@ -83,7 +224,7 @@ export default function AdminMapScreen() {
               response = await apiService.updateHazard(selectedHazard.id, { status: action });
             }
             if (response.success) {
-              await fetchHazards();
+              await loadHazards();
               setSelectedHazardId(null);
               Alert.alert('Success', `Hazard ${action} successfully.`);
             } else {
@@ -117,7 +258,7 @@ export default function AdminMapScreen() {
             <Text style={styles.topTitle}>Admin Live Map</Text>
             <Text style={styles.topSubtitle}>{hazards.length} reports · Web preview</Text>
           </View>
-          <TouchableOpacity style={styles.topAction} onPress={fetchHazards} disabled={loading}>
+          <TouchableOpacity style={styles.topAction} onPress={loadazards} disabled={loading}>
             <Text style={styles.topActionText}>{loading ? 'Refreshing...' : 'Refresh'}</Text>
           </TouchableOpacity>
         </BlurView>
@@ -142,7 +283,7 @@ export default function AdminMapScreen() {
         showsCompass={true}
         showsMyLocationButton={false}
       >
-        {hazards.map(report => (
+        {!loading && hazards.map(report => (
           <Marker
             key={report.id}
             coordinate={{ latitude: report.latitude, longitude: report.longitude }}
@@ -165,12 +306,22 @@ export default function AdminMapScreen() {
         )}
       </MapView>
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <BlurView intensity={90} tint="dark" style={styles.loadingBadge}>
+            <Text style={styles.loadingText}>Loading hazards...</Text>
+          </BlurView>
+        </View>
+      )}
+
       <BlurView intensity={85} tint="dark" style={styles.topBadge}>
         <View>
           <Text style={styles.topTitle}>Admin Live Map</Text>
-          <Text style={styles.topSubtitle}>{hazards.length} reports · {selectedHazard ? 'Detail mode' : 'Tap a marker'}</Text>
+          <Text style={styles.topSubtitle}>
+            {loading ? 'Loading hazards...' : `${hazards.length} reports · ${selectedHazard ? 'Detail mode' : 'Tap a marker'}`}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.topAction} onPress={fetchHazards} disabled={loading}>
+        <TouchableOpacity style={styles.topAction} onPress={loadHazards} disabled={loading}>
           <Text style={styles.topActionText}>{loading ? 'Refreshing...' : 'Refresh'}</Text>
         </TouchableOpacity>
       </BlurView>
@@ -185,7 +336,12 @@ export default function AdminMapScreen() {
           <Text style={styles.detailLine}>Status: {selectedHazard.status}</Text>
           <Text style={styles.detailLine}>Updated: {new Date(selectedHazard.timestamp).toLocaleString()}</Text>
           {selectedHazard.image_url ? (
-            <Image source={{ uri: selectedHazard.image_url }} style={styles.detailImage} />
+            <Image 
+              source={{ uri: selectedHazard.image_url }} 
+              style={styles.detailImage}
+              onError={(error) => console.log('[AdminMap] Image load error:', selectedHazard.image_url, error)}
+              onLoad={() => console.log('[AdminMap] Image loaded successfully:', selectedHazard.image_url)}
+            />
           ) : null}
           <View style={styles.detailActions}>
             <TouchableOpacity style={[styles.detailButton, styles.resolveButton]} onPress={() => handleAction('resolved')} disabled={busy}>
@@ -253,6 +409,31 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 13,
     fontWeight: '700',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  loadingBadge: {
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  loadingText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
   },
   hintCard: {
     position: 'absolute',

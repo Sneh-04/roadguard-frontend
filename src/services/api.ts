@@ -354,7 +354,20 @@ class ApiService {
   }
 
   async getAdminReports(): Promise<ApiResponse<any[]>> {
-    return this.makeRequest('GET', '/admin/reports');
+    try {
+      return await this.makeRequest('GET', '/admin/reports');
+    } catch (error: any) {
+      // If admin endpoint fails due to auth, provide helpful error
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.warn('Admin authentication required for /admin/reports endpoint');
+        return {
+          success: false,
+          error: 'Admin authentication required. User reports not available.',
+          data: []
+        };
+      }
+      throw error;
+    }
   }
 
   async deleteHazard(hazardId: string): Promise<ApiResponse<any>> {

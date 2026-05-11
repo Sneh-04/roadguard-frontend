@@ -40,10 +40,13 @@ export default function AdminAnalyticsScreen() {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getSystemStats();
-
-      if (response.success && response.data) {
-        const data = response.data as any;
+      
+      // Try to get admin stats first
+      const statsResponse = await apiService.getSystemStats();
+      
+      if (statsResponse.success && statsResponse.data) {
+        // Use real admin stats if available
+        const data = statsResponse.data as any;
         const normalizedData: AnalyticsData = {
           total_users: data.total_users ?? data.users_count ?? 0,
           active_users: data.active_users ?? data.active_users_count ?? 0,
@@ -60,13 +63,82 @@ export default function AdminAnalyticsScreen() {
         };
         setAnalytics(normalizedData);
       } else {
-        throw new Error(response.error || 'No analytics data available');
+        // Fallback: Calculate analytics from available hazard data
+        console.log('Admin stats not available, calculating from hazard data');
+        await loadAnalyticsFromHazards();
       }
     } catch (error) {
-      console.error('Failed to load analytics:', error);
-      setAnalytics(null);
+      console.error('Failed to load admin stats:', error);
+      // Fallback: Calculate analytics from available hazard data
+      await loadAnalyticsFromHazards();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAnalyticsFromHazards = async () => {
+    try {
+      const hazardsResponse = await apiService.getHazards();
+      
+      if (hazardsResponse.success && hazardsResponse.data) {
+        const hazards = Array.isArray(hazardsResponse.data) 
+          ? hazardsResponse.data 
+          : hazardsResponse.data.events || [];
+        
+        // Calculate basic analytics from hazard data
+        const totalHazards = hazards.length;
+        const activeHazards = hazards.filter(h => h.status === 'ACTIVE').length;
+        
+        // Group hazards by type
+        const hazardsByType: { [key: string]: number } = {};
+        hazards.forEach(hazard => {
+          const typeName = hazard.label_name || hazard.hazard_type || 'Unknown';
+          hazardsByType[typeName] = (hazardsByType[typeName] || 0) + 1;
+        });
+        
+        // Calculate average confidence
+        const avgConfidence = hazards.length > 0 
+          ? hazards.reduce((sum, h) => sum + (h.confidence || 0), 0) / hazards.length
+          : 0;
+        
+        // Generate sample daily data (last 7 days)
+        const hazardsByDay = [];
+        const now = new Date();
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(now);
+          date.setDate(date.getDate() - i);
+          const dayHazards = hazards.filter(h => {
+            const hazardDate = new Date(h.timestamp || h.created_at);
+            return hazardDate.toDateString() === date.toDateString();
+          });
+          hazardsByDay.push({
+            date: date.toISOString().split('T')[0],
+            count: dayHazards.length
+          });
+        }
+        
+        const fallbackData: AnalyticsData = {
+          total_users: 0, // Not available from hazards endpoint
+          active_users: 0, // Not available from hazards endpoint
+          total_hazards: totalHazards,
+          active_hazards: activeHazards,
+          total_reports: 0, // Not available from hazards endpoint
+          system_health: 'operational',
+          uptime: 'Unknown',
+          hazards_by_type: hazardsByType,
+          hazards_by_day: hazardsByDay,
+          user_registrations: [], // Not available
+          average_confidence: avgConfidence,
+          response_time: 0, // Not available
+        };
+        
+        setAnalytics(fallbackData);
+      } else {
+        throw new Error('No data available');
+      }
+    } catch (error) {
+      console.error('Failed to load analytics from hazards:', error);
+      setAnalytics(null);
     }
   };
 

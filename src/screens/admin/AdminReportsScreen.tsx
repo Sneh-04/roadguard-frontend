@@ -41,17 +41,21 @@ export default function AdminReportsScreen() {
   // WebSocket connection for real-time updates
   useEffect(() => {
     const wsUrl = `wss://roadguard-backend-ympg.onrender.com/ws/live`;
+    console.log('[AdminReports] Connecting to WebSocket:', wsUrl);
+    
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('[AdminReports] WebSocket connected');
+      console.log('[AdminReports] WebSocket connected successfully');
     };
 
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        console.log('[AdminReports] WebSocket message received:', message.type);
+        
         if (message.type === 'hazard_update' || message.type === 'report_created' || message.type === 'hazard_created') {
-          console.log('[AdminReports] Update received, refreshing data:', message.type);
+          console.log('[AdminReports] Refreshing data due to:', message.type);
           loadHazards();
         }
       } catch (error) {
@@ -61,13 +65,16 @@ export default function AdminReportsScreen() {
 
     ws.onerror = (error) => {
       console.error('[AdminReports] WebSocket error:', error);
+      // Don't show alert for WebSocket errors as they're common in development
     };
 
-    ws.onclose = () => {
-      console.log('[AdminReports] WebSocket disconnected');
+    ws.onclose = (event) => {
+      console.log('[AdminReports] WebSocket disconnected:', event.code, event.reason);
+      // Could implement reconnection logic here if needed
     };
 
     return () => {
+      console.log('[AdminReports] Closing WebSocket connection');
       ws.close();
     };
   }, [loadHazards]);
@@ -92,6 +99,9 @@ export default function AdminReportsScreen() {
           ? (eventsResponse.value.data as any).events
           : [];
         allHazards = [...allHazards, ...eventsData];
+        console.log(`Loaded ${eventsData.length} sensor-detected hazards`);
+      } else {
+        console.warn('Failed to load sensor detections:', eventsResponse.status === 'rejected' ? eventsResponse.reason : eventsResponse.value.error);
       }
 
       // Process user reports
@@ -102,6 +112,9 @@ export default function AdminReportsScreen() {
           ? (reportsResponse.value.data as any).reports
           : [];
 
+        console.log(`Loaded ${reportsData.length} user reports`);
+        console.log('Sample report data:', reportsData[0]); // Debug: check data structure
+
         // Normalize user reports to match hazard format
         const normalizedReports = reportsData.map((report: any) => ({
           id: report.id || `report_${report.hazard_event_id || Date.now()}`,
@@ -111,29 +124,49 @@ export default function AdminReportsScreen() {
           confidence: report.hazard?.confidence || report.confidence || 0.5,
           created_at: report.created_at,
           status: report.status || 'active',
-          image_url: report.hazard?.image_url || null,
+          image_url: report.hazard?.image_url || report.image_url || null,
           description: report.description,
           user_id: report.user_id,
           is_user_report: true, // Flag to identify user reports
         }));
 
         allHazards = [...allHazards, ...normalizedReports];
+      } else {
+        const error = reportsResponse.status === 'rejected' ? reportsResponse.reason : reportsResponse.value?.error;
+        console.warn('Failed to load user reports (may require admin authentication):', error);
+        
+        // Show a helpful message if it's an auth issue
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          console.log('Admin authentication required for user reports. Only showing sensor-detected hazards.');
+        }
       }
 
       // Normalize image URLs for all hazards
-      const normalizedHazards = allHazards.map((hazard: any) => ({
-        ...hazard,
-        image_url: hazard.image_url && !hazard.image_url.startsWith('http')
-          ? `${API_BASE_URL}${hazard.image_url}`
-          : hazard.image_url,
-        created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
-        status: hazard.status || 'active',
-      }));
+      const normalizedHazards = allHazards.map((hazard: any) => {
+        const originalUrl = hazard.image_url;
+        const normalizedUrl = hazard.image_url && !hazard.image_url.startsWith('http')
+          ? hazard.image_url.startsWith('/')
+            ? `${API_BASE_URL}${hazard.image_url}`
+            : `${API_BASE_URL}/${hazard.image_url}`
+          : hazard.image_url;
+        
+        if (originalUrl) {
+          console.log('Image URL normalization:', { original: originalUrl, normalized: normalizedUrl });
+        }
+        
+        return {
+          ...hazard,
+          image_url: normalizedUrl,
+          created_at: hazard.created_at || hazard.timestamp || new Date().toISOString(),
+          status: hazard.status || 'active',
+        };
+      });
 
+      console.log(`Total hazards loaded: ${normalizedHazards.length}`);
       setHazards(normalizedHazards);
     } catch (error) {
       console.error('Failed to load hazards:', error);
-      Alert.alert('Error', 'Failed to load hazard reports');
+      Alert.alert('Error', 'Failed to load hazard reports. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -220,7 +253,12 @@ export default function AdminReportsScreen() {
       </View>
 
       {item.image_url ? (
-        <Image source={{ uri: item.image_url }} style={styles.hazardImage} />
+        <Image 
+          source={{ uri: item.image_url }} 
+          style={styles.hazardImage}
+          onError={(error) => console.log('Image load error:', item.image_url, error)}
+          onLoad={() => console.log('Image loaded successfully:', item.image_url)}
+        />
       ) : null}
 
       <Text style={styles.hazardDescription}>{item.description || 'No description provided'}</Text>
